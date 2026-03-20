@@ -1,0 +1,31 @@
+server:
+  port: 8080
+  mode: debug  # debug, release, test
+
+database:
+  host: 10.10.1.45
+  port: 3306
+  name: tables
+  user: rabbitdb
+  password: rabbitdb
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 3600
+
+redis:
+  host: 10.10.1.45
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+jwt:
+  secret: your-secret-key-change-in-production
+  expire_time: 7200  # 2 hours
+  refresh_expire_time: 604800  # 7 days
+
+log:
+  level: debug  # debug, info, warn, error
+  format: console  # console, json
+  output: stdout  # stdout, file
+  file_path: logs/app.log

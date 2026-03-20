@@ -1,0 +1,18 @@
+#!/bin/bash
+
+echo "===================================="
+echo "DMDP Platform - Default Account Info"
+echo "===================================="
+echo ""
+echo "Default Admin Account:"
+echo "  Username: admin"
+echo "  Password: admin123"
+echo "  Email: admin@dmdp.com"
+echo "  Role: Super Administrator"
+echo ""
+echo "===================================="
+echo ""
+echo "To login, visit: http://localhost:3000"
+echo ""
+echo "IMPORTANT: Please change the default password after first login!"
+echo ""
