@@ -211,13 +211,13 @@ func (s *modelService) UpdateField(modelID, fieldID string, field *models.Field)
 	if field.DefaultValue != "" {
 		existingField.DefaultValue = field.DefaultValue
 	}
-	if field.Options != "" {
+	if field.Options != "" && field.Options != "[]" {
 		existingField.Options = field.Options
 	}
-	if field.Validation != "" {
+	if field.Validation != "" && field.Validation != "{}" {
 		existingField.Validation = field.Validation
 	}
-	if field.RelationConfig != "" {
+	if field.RelationConfig != "" && field.RelationConfig != "{}" {
 		existingField.RelationConfig = field.RelationConfig
 	}
 	if field.Order != 0 {

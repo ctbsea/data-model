@@ -1015,6 +1015,108 @@ const Data = () => {
           >
             字段配置
           </Button>
+          <Popover
+            content={
+              <div style={{ width: 300 }}>
+                <Form
+                  form={fieldForm}
+                  layout="vertical"
+                  onFinish={handleAddField}
+                >
+                  <Form.Item
+                    label="字段名称"
+                    name="display_name"
+                    rules={[{ required: true, message: '请输入字段名称' }]}
+                  >
+                    <Input placeholder="输入字段名称" autoFocus />
+                  </Form.Item>
+                  <Form.Item
+                    label="字段类型"
+                    name="type"
+                    rules={[{ required: true, message: '请选择字段类型' }]}
+                    initialValue="text"
+                  >
+                    <Select onChange={(value) => {
+                      if (value === 'select' || value === 'multi_select') {
+                        fieldForm.setFieldsValue({ showOptions: true })
+                      } else {
+                        fieldForm.setFieldsValue({ showOptions: false })
+                      }
+                    }}>
+                      <Option value="text">单行文本</Option>
+                      <Option value="email">邮箱</Option>
+                      <Option value="url">链接</Option>
+                      <Option value="number">数字</Option>
+                      <Option value="select">单选</Option>
+                      <Option value="multi_select">多选</Option>
+                      <Option value="boolean">复选框</Option>
+                      <Option value="date">日期</Option>
+                      <Option value="relation">关联</Option>
+                      <Option value="user">用户</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
+                  >
+                    {({ getFieldValue }) => {
+                      const type = getFieldValue('type')
+                      if (type === 'select' || type === 'multi_select') {
+                        return (
+                          <Form.Item
+                            label="选项列表(每行一个)"
+                            name="options"
+                            rules={[{ required: true, message: '请输入选项' }]}
+                          >
+                            <Input.TextArea rows={4} placeholder="选项1&#10;选项2&#10;选项3" />
+                          </Form.Item>
+                        )
+                      }
+                      if (type === 'relation') {
+                        return (
+                          <>
+                            <Form.Item
+                              label="关联表"
+                              name="relation_target_model"
+                              rules={[{ required: true, message: '请选择关联表' }]}
+                            >
+                              <Select placeholder="选择要关联的表">
+                                {allModels.map((m: Model) => (
+                                  <Option key={m.id} value={m.id}>{m.display_name}</Option>
+                                ))}
+                              </Select>
+                            </Form.Item>
+                            <Form.Item
+                              label="关联类型"
+                              name="relation_type"
+                              initialValue="one_to_many"
+                            >
+                              <Select>
+                                <Option value="one_to_one">一对一</Option>
+                                <Option value="one_to_many">一对多</Option>
+                                <Option value="many_to_many">多对多</Option>
+                              </Select>
+                            </Form.Item>
+                          </>
+                        )
+                      }
+                      return null
+                    }}
+                  </Form.Item>
+                  <Form.Item style={{ marginBottom: 0 }}>
+                    <Button type="primary" htmlType="submit" block>
+                      添加字段
+                    </Button>
+                  </Form.Item>
+                </Form>
+              </div>
+            }
+            title="添加字段"
+            trigger="click"
+            placement="bottomRight"
+          >
+            <Button icon={<PlusOutlined />}>添加字段</Button>
+          </Popover>
         </Space>
       </div>
 
@@ -1195,28 +1297,28 @@ const Data = () => {
 
       {/* 数据表格 */}
       {viewMode === 'table' && (
-      <div style={{ flex: 1, padding: 24, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ 
-          border: '1px solid #e8e8e8', 
-          borderRadius: 8,
-          background: '#fff',
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          minHeight: 0,
-        }}>
-          {/* 表头 */}
-          <div style={{
+        <div style={{ flex: 1, padding: 24, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ 
+            border: '1px solid #e8e8e8', 
+            borderRadius: 8,
+            background: '#fff',
             display: 'flex',
-            background: '#fafafa',
-            borderBottom: '2px solid #e8e8e8',
-            fontWeight: 500,
-            flexShrink: 0,
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0,
           }}>
-            {/* 冻结列表头 */}
-            <div style={{ display: 'flex', flexShrink: 0 }}>
-              <div style={{ width: 50, padding: '12px', borderRight: '1px solid #e8e8e8', background: '#fafafa' }}>#</div>
-              {fields.filter(f => visibleFields.includes(f.id!)).slice(0, frozenColumns).map((field, index) => (
+            {/* 表头 */}
+            <div style={{
+              display: 'flex',
+              background: '#fafafa',
+              borderBottom: '2px solid #e8e8e8',
+              fontWeight: 500,
+              flexShrink: 0,
+            }}>
+              {/* 冻结列表头 */}
+              <div style={{ display: 'flex', flexShrink: 0 }}>
+                <div style={{ width: 50, padding: '12px', borderRight: '1px solid #e8e8e8', background: '#fafafa' }}>#</div>
+                {fields.filter(f => visibleFields.includes(f.id!)).slice(0, frozenColumns).map((field, index) => (
                 <div 
                   key={field.id} 
                   style={{ 
@@ -1263,11 +1365,11 @@ const Data = () => {
                   />
                 </div>
               ))}
-            </div>
-            {/* 可滚动表头 */}
-            <div ref={headerScrollRef} onScroll={handleHeaderScroll} className="hide-scrollbar" style={{ flex: 1, overflow: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              <div style={{ display: 'flex', minWidth: 'max-content' }}>
-                {fields.filter(f => visibleFields.includes(f.id!)).slice(frozenColumns).map((field, index) => (
+              </div>
+              {/* 可滚动表头 */}
+              <div ref={headerScrollRef} onScroll={handleHeaderScroll} className="hide-scrollbar" style={{ flex: 1, overflow: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <div style={{ display: 'flex', minWidth: 'max-content' }}>
+                  {fields.filter(f => visibleFields.includes(f.id!)).slice(frozenColumns).map((field, index) => (
                   <div 
                     key={field.id} 
                     style={{ 
@@ -1314,183 +1416,12 @@ const Data = () => {
                     />
                   </div>
                 ))}
-                {/* 添加字段按钮 */}
-                <div style={{ width: 120, padding: '12px' }}>
-                  <Popover
-                content={
-                  <div style={{ width: 300 }}>
-                    <Form
-                      form={fieldForm}
-                      layout="vertical"
-                      onFinish={handleAddField}
-                    >
-                      <Form.Item
-                        label="字段名称"
-                        name="display_name"
-                        rules={[{ required: true, message: '请输入字段名称' }]}
-                      >
-                        <Input placeholder="输入字段名称" autoFocus />
-                      </Form.Item>
-                      <Form.Item
-                        label="字段类型"
-                        name="type"
-                        rules={[{ required: true, message: '请选择字段类型' }]}
-                        initialValue="text"
-                      >
-                        <Select onChange={(value) => {
-                          // 如果选择单选或多选,显示选项配置
-                          if (value === 'select' || value === 'multi_select') {
-                            fieldForm.setFieldsValue({ showOptions: true })
-                          } else {
-                            fieldForm.setFieldsValue({ showOptions: false })
-                          }
-                        }}>
-                          <Option value="text">单行文本</Option>
-                          <Option value="email">邮箱</Option>
-                          <Option value="url">链接</Option>
-                          <Option value="number">数字</Option>
-                          <Option value="select">单选</Option>
-                          <Option value="multi_select">多选</Option>
-                          <Option value="boolean">复选框</Option>
-                          <Option value="date">日期</Option>
-                          <Option value="relation">关联</Option>
-                          <Option value="user">用户</Option>
-                        </Select>
-                      </Form.Item>
-                      <Form.Item
-                        noStyle
-                        shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
-                      >
-                        {({ getFieldValue }) => {
-                          const type = getFieldValue('type')
-                          if (type === 'select' || type === 'multi_select') {
-                            return (
-                              <>
-                                <Form.Item
-                                  label="选项列表(每行一个)"
-                                  name="options"
-                                  rules={[{ required: true, message: '请输入选项' }]}
-                                >
-                                  <Input.TextArea 
-                                    rows={4} 
-                                    placeholder="选项1&#10;选项2&#10;选项3"
-                                    onChange={(e) => {
-                                      // 实时更新预览
-                                      fieldForm.setFieldsValue({ options: e.target.value })
-                                    }}
-                                  />
-                                </Form.Item>
-                                <Form.Item label="选项预览">
-                                  <div style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: 8, minHeight: 40 }}>
-                                    {(() => {
-                                      const optionsStr = getFieldValue('options') || ''
-                                      const options = optionsStr.split('\n').filter((s: string) => s.trim())
-                                      const colors = ['blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'red', 'gold', 'lime', 'geekblue']
-                                      
-                                      return options.length > 0 ? (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                          {options.map((opt: string, index: number) => (
-                                            <Tag key={index} color={colors[index % colors.length]}>
-                                              {opt}
-                                            </Tag>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <div style={{ color: '#999', fontSize: 12 }}>输入选项后将在此预览</div>
-                                      )
-                                    })()}
-                                  </div>
-                                </Form.Item>
-                              </>
-                            )
-                          }
-                          if (type === 'relation') {
-                            return (
-                              <>
-                                <Form.Item
-                                  label="关联表"
-                                  name="relation_target_model"
-                                  rules={[{ required: true, message: '请选择关联表' }]}
-                                >
-                                  <Select placeholder="选择要关联的表" onChange={(value) => {
-                                    // 清空显示字段
-                                    fieldForm.setFieldsValue({ relation_display_fields: [] })
-                                  }}>
-                                    {allModels.map((m: Model) => (
-                                      <Option key={m.id} value={m.id}>{m.display_name}</Option>
-                                    ))}
-                                  </Select>
-                                </Form.Item>
-                                <Form.Item
-                                  label="关联类型"
-                                  name="relation_type"
-                                  initialValue="one_to_many"
-                                >
-                                  <Select>
-                                    <Option value="one_to_one">一对一</Option>
-                                    <Option value="one_to_many">一对多</Option>
-                                    <Option value="many_to_many">多对多</Option>
-                                  </Select>
-                                </Form.Item>
-                                <Form.Item
-                                  noStyle
-                                  shouldUpdate={(prevValues, currentValues) => prevValues.relation_target_model !== currentValues.relation_target_model}
-                                >
-                                  {({ getFieldValue }) => {
-                                    const targetModelId = getFieldValue('relation_target_model')
-                                    const targetModel = allModels.find((m: Model) => m.id === targetModelId)
-                                    const targetFields = targetModel?.fields?.filter(f => !f.deleted) || []
-                                    return (
-                                      <Form.Item
-                                        label="显示字段"
-                                        name="relation_display_fields"
-                                        tooltip="选择关联记录时显示哪些字段"
-                                      >
-                                        <Select mode="multiple" placeholder="选择要显示的字段" allowClear>
-                                          {targetFields.map(f => (
-                                            <Option key={f.id} value={f.name}>{f.display_name}</Option>
-                                          ))}
-                                        </Select>
-                                      </Form.Item>
-                                    )
-                                  }}
-                                </Form.Item>
-                              </>
-                            )
-                          }
-                          return null
-                        }}
-                      </Form.Item>
-                      <Form.Item style={{ marginBottom: 0 }}>
-                        <Button type="primary" htmlType="submit" block>
-                          添加字段
-                        </Button>
-                      </Form.Item>
-                    </Form>
-                  </div>
-                }
-                title="添加字段"
-                trigger="click"
-                placement="bottomLeft"
-                open={addFieldPopoverVisible}
-                onOpenChange={setAddFieldPopoverVisible}
-              >
-                <Button 
-                  type="dashed" 
-                  icon={<PlusOutlined />}
-                  size="small"
-                >
-                  添加字段
-                </Button>
-              </Popover>
-            </div>
-            <div style={{ width: 80, padding: '12px' }}>操作</div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* 数据行容器 */}
-          <div ref={bodyScrollRef} onScroll={(e) => { handleBodyScroll(e); handleScrollLoadMore(e); }} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+            {/* 数据行容器 */}
+            <div ref={bodyScrollRef} onScroll={(e) => { handleBodyScroll(e); handleScrollLoadMore(e); }} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
           {data.map((row, rowIndex) => (
             <div
               key={row.id}
@@ -2000,9 +1931,9 @@ const Data = () => {
                 添加记录
               </Button>
             </div>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* 添加记录Modal */}

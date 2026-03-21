@@ -35,6 +35,7 @@ const Models = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [model, setModel] = useState<Model | null>(null)
+  const [allModels, setAllModels] = useState<Model[]>([])
   const [loading, setLoading] = useState(false)
   const [drawerVisible, setDrawerVisible] = useState(false)
   const [fieldForm] = Form.useForm()
@@ -43,8 +44,18 @@ const Models = () => {
   useEffect(() => {
     if (id) {
       fetchModel()
+      fetchAllModels()
     }
   }, [id])
+
+  const fetchAllModels = async () => {
+    try {
+      const response = await modelApi.list(1, 100)
+      setAllModels(response.models || [])
+    } catch (error) {
+      console.error('Failed to fetch models:', error)
+    }
+  }
 
   const fetchModel = async () => {
     setLoading(true)
@@ -62,6 +73,27 @@ const Models = () => {
     if (!model) return
 
     try {
+      // 处理选项数据
+      let optionsStr = '[]'
+      if (values.options) {
+        const optionsArray = values.options.split('\n').filter((s: string) => s.trim())
+        optionsStr = JSON.stringify(optionsArray)
+      }
+
+      // 处理关联配置
+      let relationConfigStr = ''
+      if (values.type === 'relation') {
+        const relationConfig = {
+          target_model_id: values.relation_target_model,
+          relation_type: values.relation_type || 'one_to_many',
+          display_fields: values.relation_display_fields || [],
+          allow_multiple: values.relation_type === 'one_to_many' || values.relation_type === 'many_to_many',
+          allow_duplicate: values.relation_type === 'many_to_many',
+          bidirectional: false
+        }
+        relationConfigStr = JSON.stringify(relationConfig)
+      }
+
       if (editingField) {
         // 更新字段
         await modelApi.updateField(model.id, editingField.id!, {
@@ -73,6 +105,8 @@ const Models = () => {
           default_value: values.default_value,
           order: editingField.order,
           validation: '{}',
+          options: optionsStr,
+          relation_config: relationConfigStr,
         })
         message.success('字段更新成功')
       } else {
@@ -86,6 +120,8 @@ const Models = () => {
           default_value: values.default_value,
           order: model.fields?.length || 0,
           validation: '{}',
+          options: optionsStr,
+          relation_config: relationConfigStr,
         })
         message.success('字段添加成功')
       }
@@ -362,6 +398,26 @@ const Models = () => {
                       onClick={() => {
                         if (field.is_lock) return
                         setEditingField(field)
+                        // 解析选项
+                        let optionsText = ''
+                        if (field.options) {
+                          try {
+                            const opts = JSON.parse(field.options)
+                            if (Array.isArray(opts)) {
+                              optionsText = opts.join('\n')
+                            }
+                          } catch (e) {}
+                        }
+                        // 解析关联配置
+                        let relationTargetModel = ''
+                        let relationType = 'one_to_many'
+                        if (field.relation_config) {
+                          try {
+                            const config = JSON.parse(field.relation_config)
+                            relationTargetModel = config.target_model_id || ''
+                            relationType = config.relation_type || 'one_to_many'
+                          } catch (e) {}
+                        }
                         fieldForm.setFieldsValue({
                           display_name: field.display_name,
                           type: field.type,
@@ -369,6 +425,9 @@ const Models = () => {
                           unique: field.unique,
                           default_value: field.default_value,
                           is_lock: field.is_lock,
+                          options: optionsText,
+                          relation_target_model: relationTargetModel,
+                          relation_type: relationType,
                         })
                         setDrawerVisible(true)
                       }}
@@ -461,7 +520,7 @@ const Models = () => {
             name="display_name"
             rules={[{ required: true, message: '请输入字段名称' }]}
           >
-            <Input placeholder="输入字段显示名称" />
+            <Input placeholder="输入字段显示名称" autoFocus />
           </Form.Item>
 
           <Form.Item
@@ -470,42 +529,76 @@ const Models = () => {
             rules={[{ required: true, message: '请选择字段类型' }]}
             initialValue="text"
           >
-            <Select
-              showSearch
-              placeholder="选择字段类型"
-              optionFilterProp="children"
-            >
-              <Option value="text">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#1890ff' }}>A</span>
-                  单行文本
-                </div>
-              </Option>
-              <Option value="number">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#52c41a' }}>#</span>
-                  数字
-                </div>
-              </Option>
-              <Option value="select">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#fa8c16' }}>○</span>
-                  单选
-                </div>
-              </Option>
-              <Option value="boolean">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#722ed1' }}>☑</span>
-                  复选框
-                </div>
-              </Option>
-              <Option value="date">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#eb2f96' }}>📅</span>
-                  日期
-                </div>
-              </Option>
+            <Select onChange={(value) => {
+              if (value === 'select' || value === 'multi_select') {
+                fieldForm.setFieldsValue({ showOptions: true })
+              } else {
+                fieldForm.setFieldsValue({ showOptions: false })
+              }
+            }}>
+              <Option value="text">单行文本</Option>
+              <Option value="email">邮箱</Option>
+              <Option value="url">链接</Option>
+              <Option value="number">数字</Option>
+              <Option value="select">单选</Option>
+              <Option value="multi_select">多选</Option>
+              <Option value="boolean">复选框</Option>
+              <Option value="date">日期</Option>
+              <Option value="relation">关联</Option>
+              <Option value="user">用户</Option>
             </Select>
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
+          >
+            {({ getFieldValue }) => {
+              const type = getFieldValue('type')
+              if (type === 'select' || type === 'multi_select') {
+                return (
+                  <Form.Item
+                    label="选项列表(每行一个)"
+                    name="options"
+                    rules={[{ required: true, message: '请输入选项' }]}
+                  >
+                    <Input.TextArea 
+                      rows={4} 
+                      placeholder="选项1&#10;选项2&#10;选项3"
+                    />
+                  </Form.Item>
+                )
+              }
+              if (type === 'relation') {
+                return (
+                  <>
+                    <Form.Item
+                      label="关联表"
+                      name="relation_target_model"
+                      rules={[{ required: true, message: '请选择关联表' }]}
+                    >
+                      <Select placeholder="选择要关联的表">
+                        {allModels.map((m: Model) => (
+                          <Option key={m.id} value={m.id}>{m.display_name}</Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                    <Form.Item
+                      label="关联类型"
+                      name="relation_type"
+                      initialValue="one_to_many"
+                    >
+                      <Select>
+                        <Option value="one_to_one">一对一</Option>
+                        <Option value="one_to_many">一对多</Option>
+                        <Option value="many_to_many">多对多</Option>
+                      </Select>
+                    </Form.Item>
+                  </>
+                )
+              }
+              return null
+            }}
           </Form.Item>
 
           <Form.Item
