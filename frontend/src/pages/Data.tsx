@@ -22,13 +22,16 @@ import {
   Popover,
   DatePicker,
   Radio,
-  Badge
+  Badge,
+  Upload
 } from 'antd'
 import { 
   PlusOutlined, 
   DeleteOutlined,
   FilterOutlined,
   SortAscendingOutlined,
+  DownloadOutlined,
+  UploadOutlined,
   SortDescendingOutlined,
   GroupOutlined,
   MoreOutlined,
@@ -48,6 +51,7 @@ import { userApi } from '../api/user'
 import { emailApi } from '../api/email'
 import type { MenuProps } from 'antd'
 import { useAuthStore } from '../stores/authStore'
+import { TableView, CalendarView, AddRecordModal, FilterModal, getFieldIcon, getFieldColor } from './data/index'
 
 const { Option } = Select
 
@@ -586,6 +590,92 @@ const Data = () => {
     setAddRecordModalVisible(true)
   }
 
+  // Excel模板下载
+  const handleDownloadTemplate = () => {
+    if (!model || !fields.length) return
+    
+    // 创建CSV内容
+    const visibleFieldsList = fields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')
+    const headers = visibleFieldsList.map(f => f.display_name)
+    const csvContent = headers.join(',') + '\n'
+    
+    // 创建Blob并下载
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `${model.display_name}_导入模板.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    message.success('模板下载成功')
+  }
+
+  // Excel导入
+  const handleImportExcel = async (file: File) => {
+    if (!model) return false
+    
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').filter(line => line.trim())
+      
+      if (lines.length < 2) {
+        message.error('文件内容为空或格式不正确')
+        return false
+      }
+      
+      // 解析表头
+      const headers = lines[0].split(',').map(h => h.trim())
+      const visibleFieldsList = fields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')
+      
+      // 创建字段名映射
+      const fieldMap: Record<string, Field> = {}
+      visibleFieldsList.forEach(f => {
+        fieldMap[f.display_name] = f
+      })
+      
+      // 解析数据行
+      const records: any[] = []
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',')
+        const record: any = {}
+        
+        headers.forEach((header, index) => {
+          const field = fieldMap[header]
+          if (field && values[index] !== undefined) {
+            let value = values[index].trim()
+            // 处理多选字段
+            if (field.type === 'multi_select') {
+              value = value.split(';').map(v => v.trim()).filter(Boolean).join(',')
+            }
+            record[field.name] = value
+          }
+        })
+        
+        if (Object.keys(record).length > 0) {
+          records.push(record)
+        }
+      }
+      
+      // 批量创建记录
+      let successCount = 0
+      let failCount = 0
+      for (const record of records) {
+        try {
+          await dataApi.create(model.name, record)
+          successCount++
+        } catch {
+          failCount++
+        }
+      }
+      
+      message.success(`导入完成: 成功 ${successCount} 条, 失败 ${failCount} 条`)
+      fetchData()
+      return true
+    } catch (error) {
+      message.error('导入失败,请检查文件格式')
+      return false
+    }
+  }
+
   const handleAddRecordSubmit = async (values: any) => {
     if (!model) return
     
@@ -735,32 +825,6 @@ const Data = () => {
     const timer = setTimeout(saveConfig, 500)
     return () => clearTimeout(timer)
   }, [filters, sorts, columnWidths, frozenColumns, visibleFields, viewMode, configLoaded, isInitialLoad, model?.id, calendarStartField, calendarEndField])
-
-  const getFieldIcon = (type: string) => {
-    const iconMap: Record<string, string> = {
-      text: 'A',
-      number: '#',
-      select: '○',
-      boolean: '☑',
-      date: '📅',
-      email: '@',
-      url: '🔗',
-    }
-    return iconMap[type] || 'A'
-  }
-
-  const getFieldColor = (type: string) => {
-    const colorMap: Record<string, string> = {
-      text: '#1890ff',
-      number: '#52c41a',
-      select: '#fa8c16',
-      boolean: '#722ed1',
-      date: '#eb2f96',
-      email: '#13c2c2',
-      url: '#2f54eb',
-    }
-    return colorMap[type] || '#8c8c8c'
-  }
 
   const fieldMenu = (field: Field, fieldIndex: number): MenuProps => ({
     items: [
@@ -1015,6 +1079,22 @@ const Data = () => {
           >
             字段配置
           </Button>
+          <Button 
+            icon={<DownloadOutlined />}
+            onClick={handleDownloadTemplate}
+          >
+            下载模板
+          </Button>
+          <Upload
+            accept=".csv"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              handleImportExcel(file)
+              return false
+            }}
+          >
+            <Button icon={<UploadOutlined />}>导入数据</Button>
+          </Upload>
           <Popover
             content={
               <div style={{ width: 300 }}>
@@ -1163,777 +1243,87 @@ const Data = () => {
 
       {/* 日历视图 */}
       {viewMode === 'calendar' && calendarStartField && (
-        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Space>
-              <Button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}>
-                上个月
-              </Button>
-              <span style={{ fontSize: 18, fontWeight: 500 }}>
-                {currentMonth.getFullYear()}年{currentMonth.getMonth() + 1}月
-              </span>
-              <Button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}>
-                下个月
-              </Button>
-              <Button onClick={() => setCurrentMonth(new Date())}>今天</Button>
-            </Space>
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(7, 1fr)',
-            gap: 1,
-            background: '#e8e8e8',
-            border: '1px solid #e8e8e8',
-            borderRadius: 8,
-            overflow: 'hidden',
-          }}>
-            {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map(day => (
-              <div key={day} style={{ background: '#fafafa', padding: '12px', textAlign: 'center', fontWeight: 500 }}>
-                {day}
-              </div>
-            ))}
-            {(() => {
-              const year = currentMonth.getFullYear()
-              const month = currentMonth.getMonth()
-              const firstDay = new Date(year, month, 1)
-              const lastDay = new Date(year, month + 1, 0)
-              const startPadding = (firstDay.getDay() + 6) % 7
-              const days = []
-              
-              // 获取可见字段用于显示
-              const displayFields = fields.filter(f => 
-                visibleFields.includes(f.id!) && 
-                !f.deleted && 
-                !['id', 'created_at', 'updated_at'].includes(f.name)
-              )
-              
-              // 填充前面的空白
-              for (let i = 0; i < startPadding; i++) {
-                days.push(<div key={`empty-${i}`} style={{ background: '#fff', padding: '12px', minHeight: 100 }} />)
-              }
-              
-              // 填充日期
-              for (let day = 1; day <= lastDay.getDate(); day++) {
-                const date = new Date(year, month, day)
-                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                const dayEvents = data.filter(row => {
-                  const start = row[calendarStartField]
-                  if (!start) return false
-                  
-                  // 处理日期格式 - 可能是时间戳或带时间的字符串
-                  let startDate = start
-                  if (typeof start === 'string' && start.includes('T')) {
-                    startDate = start.split('T')[0]
-                  }
-                  
-                  // 如果没有结束时间字段或结束时间字段与开始时间相同，则只匹配当天
-                  const end = calendarEndField ? row[calendarEndField] : null
-                  let endDate = end
-                  if (end && typeof end === 'string' && end.includes('T')) {
-                    endDate = end.split('T')[0]
-                  }
-                  
-                  if (!endDate || startDate === endDate) {
-                    return startDate === dateStr
-                  }
-                  return dateStr >= startDate && dateStr <= endDate
-                })
-                
-                days.push(
-                  <div key={day} style={{ background: '#fff', padding: '12px', minHeight: 100 }}>
-                    <div style={{ marginBottom: 8, fontWeight: 500 }}>{day}</div>
-                    {dayEvents.map(event => {
-                      // 根据visibleFields显示字段
-                      const displayContent = displayFields.slice(0, 2).map(f => {
-                        const value = event[f.name]
-                        if (value === null || value === undefined || value === '') return null
-                        
-                        if (f.type === 'user') {
-                          const user = users.find((u: any) => u.id === value)
-                          return user ? user.nickname || user.username : null
-                        }
-                        if (f.type === 'select' || f.type === 'multi_select') {
-                          return value
-                        }
-                        if (f.type === 'date') {
-                          return dayjs(value).format('MM-DD')
-                        }
-                        return String(value)
-                      }).filter(Boolean).join(' - ')
-                      
-                      return (
-                        <div
-                          key={event.id}
-                          style={{
-                            background: '#722ed1',
-                            color: '#fff',
-                            padding: '4px 8px',
-                            borderRadius: 4,
-                            fontSize: 12,
-                            marginBottom: 4,
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          onClick={() => {
-                            setCurrentRecord(event)
-                            setRecordDetailVisible(true)
-                          }}
-                        >
-                          {displayContent || event.id}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              }
-              
-              return days
-            })()}
-          </div>
-        </div>
+        <CalendarView
+          model={model}
+          fields={fields}
+          data={data}
+          users={users}
+          visibleFields={visibleFields}
+          calendarStartField={calendarStartField}
+          calendarEndField={calendarEndField}
+          currentMonth={currentMonth}
+          onMonthChange={setCurrentMonth}
+          onRecordClick={(record) => {
+            setCurrentRecord(record)
+            setRecordDetailVisible(true)
+          }}
+        />
       )}
 
       {/* 数据表格 */}
       {viewMode === 'table' && (
-        <div style={{ flex: 1, padding: 24, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ 
-            border: '1px solid #e8e8e8', 
-            borderRadius: 8,
-            background: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-            flex: 1,
-            minHeight: 0,
-          }}>
-            {/* 表头 */}
-            <div style={{
-              display: 'flex',
-              background: '#fafafa',
-              borderBottom: '2px solid #e8e8e8',
-              fontWeight: 500,
-              flexShrink: 0,
-            }}>
-              {/* 冻结列表头 */}
-              <div style={{ display: 'flex', flexShrink: 0 }}>
-                <div style={{ width: 50, padding: '12px', borderRight: '1px solid #e8e8e8', background: '#fafafa' }}>#</div>
-                {fields.filter(f => visibleFields.includes(f.id!)).slice(0, frozenColumns).map((field, index) => (
-                <div 
-                  key={field.id} 
-                  style={{ 
-                    width: columnWidths[field.id!] || 200, 
-                    padding: '12px', 
-                    borderRight: '1px solid #e8e8e8',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    background: '#fafafa',
-                    position: 'relative',
-                  }}
-                >
-                  <span style={{ 
-                    width: 24, 
-                    height: 24, 
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: `${getFieldColor(field.type)}20`,
-                    color: getFieldColor(field.type),
-                    borderRadius: 4,
-                    fontSize: 12,
-                  }}>
-                    {getFieldIcon(field.type)}
-                  </span>
-                  <span style={{ flex: 1 }}>{field.display_name}</span>
-                  <Dropdown menu={fieldMenu(field, index)} trigger={['click']}>
-                    <Button type="text" size="small" icon={<MoreOutlined />} />
-                  </Dropdown>
-                  {/* 可拖拽的分隔线 */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 5,
-                      cursor: 'col-resize',
-                      zIndex: 1,
-                      background: resizing === field.id ? '#1890ff' : 'transparent',
-                    }}
-                    onMouseDown={(e) => handleMouseDown(e, field.id!)}
-                  />
-                </div>
-              ))}
-              </div>
-              {/* 可滚动表头 */}
-              <div ref={headerScrollRef} onScroll={handleHeaderScroll} className="hide-scrollbar" style={{ flex: 1, overflow: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                <div style={{ display: 'flex', minWidth: 'max-content' }}>
-                  {fields.filter(f => visibleFields.includes(f.id!)).slice(frozenColumns).map((field, index) => (
-                  <div 
-                    key={field.id} 
-                    style={{ 
-                      width: columnWidths[field.id!] || 200, 
-                      padding: '12px', 
-                      borderRight: '1px solid #e8e8e8',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      background: 'transparent',
-                      position: 'relative',
-                    }}
-                  >
-                    <span style={{ 
-                      width: 24, 
-                      height: 24, 
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: `${getFieldColor(field.type)}20`,
-                      color: getFieldColor(field.type),
-                      borderRadius: 4,
-                      fontSize: 12,
-                    }}>
-                      {getFieldIcon(field.type)}
-                    </span>
-                    <span style={{ flex: 1 }}>{field.display_name}</span>
-                    <Dropdown menu={fieldMenu(field, frozenColumns + index)} trigger={['click']}>
-                      <Button type="text" size="small" icon={<MoreOutlined />} />
-                    </Dropdown>
-                    {/* 可拖拽的分隔线 */}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: 5,
-                        cursor: 'col-resize',
-                        zIndex: 1,
-                        background: resizing === field.id ? '#1890ff' : 'transparent',
-                      }}
-                      onMouseDown={(e) => handleMouseDown(e, field.id!)}
-                    />
-                  </div>
-                ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 数据行容器 */}
-            <div ref={bodyScrollRef} onScroll={(e) => { handleBodyScroll(e); handleScrollLoadMore(e); }} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-          {data.map((row, rowIndex) => (
-            <div
-              key={row.id}
-              onMouseEnter={() => setHoveredRow(row.id)}
-              onMouseLeave={() => setHoveredRow(null)}
-              style={{
-                display: 'flex',
-                borderBottom: '1px solid #e8e8e8',
-                background: hoveredRow === row.id ? '#f5f5f5' : '#fff',
-              }}
-            >
-              {/* 冻结列数据 */}
-              <div style={{ display: 'flex', flexShrink: 0, position: 'sticky', left: 0, zIndex: 5 }}>
-                <div 
-                  style={{ width: 50, padding: '12px', borderRight: '1px solid #e8e8e8', cursor: 'pointer', position: 'relative', background: '#fff' }}
-                  onClick={() => {
-                    setCurrentRecord(row)
-                    setRecordDetailVisible(true)
-                  }}
-                >
-                  {rowIndex + 1}
-                  {commentCounts[row.id] > 0 && (
-                    <span style={{
-                      position: 'absolute',
-                      top: 4,
-                      right: 4,
-                      background: '#ff4d4f',
-                      color: '#fff',
-                      fontSize: 10,
-                      padding: '0 4px',
-                      borderRadius: 10,
-                      minWidth: 16,
-                      textAlign: 'center',
-                    }}>
-                      {commentCounts[row.id]}
-                    </span>
-                  )}
-                </div>
-                {fields.filter(f => visibleFields.includes(f.id!)).slice(0, frozenColumns).map((field, fieldIndex) => (
-                  <div 
-                    key={field.id} 
-                    style={{ 
-                      width: columnWidths[field.id!] || 200, 
-                      padding: '12px', 
-                      borderRight: '1px solid #e8e8e8',
-                      cursor: 'pointer',
-                      background: editingCell === `${row.id}-${field.name}` ? '#e6f7ff' : '#fafafa',
-                      minHeight: 46,
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                    onClick={() => {
-                      if (field.type === 'relation') {
-                        setCurrentRelationField(field)
-                        setCurrentRelationRow(row)
-                        const cellValue = row[field.name]
-                        if (typeof cellValue === 'string' && cellValue) {
-                          setSelectedRelationIds(cellValue.split(',').filter((id: string) => id.trim()))
-                        } else {
-                          setSelectedRelationIds([])
-                        }
-                        setRelationModalVisible(true)
-                      } else {
-                        setEditingCell(`${row.id}-${field.name}`)
-                        const cellValue = row[field.name]
-                        if (field.type === 'multi_select' && typeof cellValue === 'string' && cellValue) {
-                          setEditValue(cellValue.split(','))
-                        } else {
-                          setEditValue(cellValue || '')
-                        }
-                      }
-                    }}
-                  >
-                    {editingCell === `${row.id}-${field.name}` ? (
-                      field.type === 'select' || field.type === 'multi_select' ? (
-                        <Select
-                          autoFocus
-                          open={true}
-                          mode={field.type === 'multi_select' ? 'multiple' : undefined}
-                          value={editValue}
-                          onChange={(value) => {
-                            setEditValue(value)
-                            handleUpdateCell(row.id, field.name, value)
-                            setEditingCell(null)
-                          }}
-                          onBlur={() => setEditingCell(null)}
-                          size="small"
-                          style={{ width: '100%' }}
-                          options={(() => {
-                            try {
-                              const opts = JSON.parse(field.options || '[]')
-                              return opts.map((opt: string) => ({ label: opt, value: opt }))
-                            } catch {
-                              return []
-                            }
-                          })()}
-                        />
-                      ) : field.type === 'date' ? (
-                        <DatePicker
-                          autoFocus
-                          open={true}
-                          value={editValue ? dayjs(editValue) : null}
-                          onChange={(date) => {
-                            const value = date ? date.format('YYYY-MM-DD') : ''
-                            setEditValue(value)
-                            handleUpdateCell(row.id, field.name, value)
-                            setEditingCell(null)
-                          }}
-                          size="small"
-                          style={{ width: '100%' }}
-                        />
-                      ) : field.type === 'user' ? (
-                        <Select
-                          autoFocus
-                          open={true}
-                          value={editValue}
-                          onChange={(value) => {
-                            setEditValue(value)
-                            handleUpdateCell(row.id, field.name, value)
-                            setEditingCell(null)
-                          }}
-                          onBlur={() => setEditingCell(null)}
-                          size="small"
-                          style={{ width: '100%' }}
-                          options={users.map(user => ({
-                            label: user.nickname || user.username,
-                            value: user.id
-                          }))}
-                          filterOption={(input, option) =>
-                            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                          }
-                        />
-                      ) : (
-                        <Input
-                          autoFocus
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleUpdateCell(row.id, field.name, editValue)}
-                          onPressEnter={() => handleUpdateCell(row.id, field.name, editValue)}
-                          size="small"
-                          style={{ width: '100%' }}
-                        />
-                      )
-                    ) : (
-                      <span style={{ 
-                        color: row[field.name] ? 'inherit' : '#bfbfbf',
-                        fontStyle: row[field.name] ? 'normal' : 'italic'
-                      }}>
-                        {field.type === 'select' || field.type === 'multi_select'
-                          ? (() => {
-                              try {
-                                const options = JSON.parse(field.options || '[]')
-                                const colors = ['blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'red', 'gold', 'lime', 'geekblue']
-                                
-                                if (field.type === 'multi_select' && row[field.name]) {
-                                  const values = Array.isArray(row[field.name]) ? row[field.name] : String(row[field.name]).split(',')
-                                  return (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                      {values.map((value: string, index: number) => {
-                                        const optIndex = options.indexOf(value.trim())
-                                        const color = colors[optIndex !== -1 ? optIndex : index % colors.length]
-                                        return (
-                                          <Tag key={index} color={color} style={{ margin: 0 }}>
-                                            {value.trim()}
-                                          </Tag>
-                                        )
-                                      })}
-                                    </div>
-                                  )
-                                }
-                                
-                                const optIndex = options.indexOf(row[field.name])
-                                const color = colors[optIndex !== -1 ? optIndex : 0]
-                                return (
-                                  <Tag color={color} style={{ margin: 0 }}>
-                                    {row[field.name]}
-                                  </Tag>
-                                )
-                              } catch {
-                                return row[field.name]
-                              }
-                            })()
-                          : field.type === 'date' && row[field.name]
-                          ? dayjs(row[field.name]).format('YYYY-MM-DD')
-                          : field.type === 'boolean'
-                          ? row[field.name] ? '是' : '否'
-                          : field.type === 'user' && row[field.name]
-                          ? (() => {
-                              const user = users.find((u: any) => u.id === row[field.name])
-                              return user ? (
-                                <Tag color="blue" style={{ margin: 0 }}>
-                                  {user.nickname || user.username}
-                                </Tag>
-                              ) : row[field.name] || '-'
-                            })()
-                          : row[field.name] || '点击编辑'
-                        }
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {/* 可滚动数据 */}
-              <div style={{ flex: 1, display: 'flex', minWidth: 'max-content' }}>
-                  {fields.filter(f => visibleFields.includes(f.id!)).slice(frozenColumns).map((field, fieldIndex) => (
-                <div 
-                  key={field.id} 
-                  style={{ 
-                    width: columnWidths[field.id!] || 200, 
-                    padding: '12px', 
-                    borderRight: '1px solid #e8e8e8',
-                    cursor: 'pointer',
-                    background: editingCell === `${row.id}-${field.name}` ? '#e6f7ff' : 'transparent',
-                    minHeight: 46,
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                  onClick={async () => {
-                    if (field.type === 'relation') {
-                      // 关联字段打开Modal
-                      setCurrentRelationField(field)
-                      setCurrentRelationRow(row)
-                      const cellValue = row[field.name]
-                      if (typeof cellValue === 'string' && cellValue) {
-                        setSelectedRelationIds(cellValue.split(',').filter((id: string) => id.trim()))
-                      } else {
-                        setSelectedRelationIds([])
-                      }
-                      
-                      // 加载关联数据
-                      loadRelationData(field, 1, 20)
-                      
-                      setRelationModalVisible(true)
-                    } else {
-                      // 其他字段正常编辑
-                      setEditingCell(`${row.id}-${field.name}`)
-                      const cellValue = row[field.name]
-                      if (field.type === 'multi_select' && typeof cellValue === 'string' && cellValue) {
-                        setEditValue(cellValue.split(','))
-                      } else {
-                        setEditValue(cellValue || '')
-                      }
-                    }
-                  }}
-                >
-                  {editingCell === `${row.id}-${field.name}` ? (
-                    field.type === 'select' || field.type === 'multi_select' ? (
-                      <Select
-                        autoFocus
-                        open={true}
-                        mode={field.type === 'multi_select' ? 'multiple' : undefined}
-                        value={editValue}
-                        onChange={(value) => {
-                          setEditValue(value)
-                          handleUpdateCell(row.id, field.name, value)
-                          setEditingCell(null)
-                        }}
-                        onBlur={() => setEditingCell(null)}
-                        size="small"
-                        style={{ width: '100%' }}
-                        options={(() => {
-                          try {
-                            const opts = JSON.parse(field.options || '[]')
-                            return opts.map((opt: string) => ({ label: opt, value: opt }))
-                          } catch {
-                            return []
-                          }
-                        })()}
-                      />
-                    ) : field.type === 'date' ? (
-                      <DatePicker
-                        autoFocus
-                        open={true}
-                        value={editValue ? dayjs(editValue) : null}
-                        onChange={(date) => {
-                          const value = date ? date.format('YYYY-MM-DD') : ''
-                          setEditValue(value)
-                          handleUpdateCell(row.id, field.name, value)
-                          setEditingCell(null)
-                        }}
-                        onBlur={() => setEditingCell(null)}
-                        size="small"
-                        style={{ width: '100%' }}
-                      />
-                    ) : field.type === 'user' ? (
-                      <Select
-                        autoFocus
-                        open={true}
-                        showSearch
-                        mode={field.type === 'user' && field.name.includes('multi') ? 'multiple' : undefined}
-                        value={editValue}
-                        onChange={(value) => {
-                          setEditValue(value)
-                          handleUpdateCell(row.id, field.name, value)
-                          setEditingCell(null)
-                        }}
-                        onBlur={() => setEditingCell(null)}
-                        size="small"
-                        style={{ width: '100%' }}
-                        options={users.map(user => ({
-                          label: user.nickname || user.username,
-                          value: user.id
-                        }))}
-                        filterOption={(input, option) =>
-                          (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                        }
-                      />
-                    ) : (
-                      <Input
-                        autoFocus
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => handleUpdateCell(row.id, field.name, editValue)}
-                        onPressEnter={() => handleUpdateCell(row.id, field.name, editValue)}
-                        size="small"
-                        style={{ width: '100%' }}
-                      />
-                    )
-                  ) : (
-                    <span style={{ 
-                      color: row[field.name] ? 'inherit' : '#bfbfbf',
-                      fontStyle: row[field.name] ? 'normal' : 'italic'
-                    }}>
-                      {field.type === 'select' || field.type === 'multi_select'
-                        ? (() => {
-                            try {
-                              const options = JSON.parse(field.options || '[]')
-                              const colors = ['blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'red', 'gold', 'lime', 'geekblue']
-                              
-                              if (field.type === 'multi_select' && row[field.name]) {
-                                const values = Array.isArray(row[field.name]) ? row[field.name] : String(row[field.name]).split(',')
-                                return (
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                    {values.map((value: string, index: number) => {
-                                      const optIndex = options.indexOf(value.trim())
-                                      const color = colors[optIndex !== -1 ? optIndex : index % colors.length]
-                                      return (
-                                        <Tag key={index} color={color} style={{ margin: 0 }}>
-                                          {value.trim()}
-                                        </Tag>
-                                      )
-                                    })}
-                                  </div>
-                                )
-                              } else if (row[field.name]) {
-                                const optIndex = options.indexOf(row[field.name])
-                                const color = colors[optIndex !== -1 ? optIndex : 0]
-                                return (
-                                  <Tag color={color} style={{ margin: 0 }}>
-                                    {row[field.name]}
-                                  </Tag>
-                                )
-                              }
-                              return '点击编辑'
-                            } catch {
-                              return row[field.name] || '点击编辑'
-                            }
-                          })()
-                        : field.type === 'date' && row[field.name] 
-                        ? (() => {
-                            try {
-                              const date = new Date(row[field.name])
-                              const year = date.getFullYear()
-                              const month = String(date.getMonth() + 1).padStart(2, '0')
-                              const day = String(date.getDate()).padStart(2, '0')
-                              return `${year}-${month}-${day}`
-                            } catch {
-                              return row[field.name]
-                            }
-                          })()
-                        : field.type === 'relation' && row[field.name]
-                        ? (() => {
-                            try {
-                              const ids = String(row[field.name]).split(',').filter(id => id.trim())
-                              const config = JSON.parse(field.relation_config || '{}')
-                              const displayFields = config.display_fields || []
-                              
-                              // 颜色数组
-                              const colors = ['blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'red', 'gold']
-                              
-                              return (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                  {ids.map((id: string, index: number) => {
-                                    // 优先使用后端返回的 _data 字段
-                                    const relationDataKey = `${field.name}_data`
-                                    let record: any = null
-                                    
-                                    // 检查是否有批量附加的关联数据
-                                    if (row[relationDataKey]) {
-                                      if (Array.isArray(row[relationDataKey])) {
-                                        record = row[relationDataKey].find((r: any) => r.id === id.trim())
-                                      } else if (row[relationDataKey].id === id.trim()) {
-                                        record = row[relationDataKey]
-                                      }
-                                    }
-                                    
-                                    if (!record) {
-                                      return (
-                                        <Tag key={id} color="default" style={{ margin: 0 }}>
-                                          {id}
-                                        </Tag>
-                                      )
-                                    }
-                                    
-                                    // 显示多个字段
-                                    if (displayFields.length > 0) {
-                                      return (
-                                        <Tag key={id} color={colors[index % colors.length]} style={{ margin: 0 }}>
-                                          {displayFields.map((f: string) => record[f]).filter(Boolean).join(' - ')}
-                                        </Tag>
-                                      )
-                                    }
-                                    
-                                    // 默认显示第一个非系统字段
-                                    const firstField = Object.keys(record).find(k => k !== 'id' && k !== 'created_at' && k !== 'updated_at')
-                                    return (
-                                      <Tag key={id} color={colors[index % colors.length]} style={{ margin: 0 }}>
-                                        {record[firstField] || id}
-                                      </Tag>
-                                    )
-                                  })}
-                                </div>
-                              )
-                            } catch (e) {
-                              console.error('Relation display error:', e)
-                              return row[field.name]
-                            }
-                          })()
-                        : field.type === 'user' && row[field.name]
-                        ? (() => {
-                            const user = users.find((u: any) => u.id === row[field.name])
-                            return user ? (
-                              <Tag color="blue" style={{ margin: 0 }}>
-                                {user.nickname || user.username}
-                              </Tag>
-                            ) : row[field.name] || '-'
-                          })()
-                        : field.type === 'email' && row[field.name]
-                        ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span>{row[field.name]}</span>
-                            <Badge count={unreadEmailCount} size="small" offset={[-5, 0]}>
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<MailOutlined />}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setCurrentEmail(row[field.name])
-                                  setEmailModalVisible(true)
-                                }}
-                              />
-                            </Badge>
-                          </div>
-                        )
-                        : row[field.name] || '点击编辑'
-                      }
-                    </span>
-                  )}
-                </div>
-              ))}
-              <div style={{ width: 120, padding: '12px', borderRight: '1px solid #e8e8e8' }} />
-              <div style={{ width: 80, padding: '12px' }}>
-                <Button 
-                  type="text" 
-                  danger 
-                  size="small" 
-                  icon={<DeleteOutlined />}
-                  onClick={() => {
-                    Modal.confirm({
-                      title: '确认删除',
-                      content: '确定要删除这条记录吗?',
-                      onOk: () => handleDeleteRow(row.id),
-                    })
-                  }}
-                />
-              </div>
-              </div>
-            </div>
-          ))}
-          </div>
-
-          {/* 加载更多提示 */}
-          {loadingMore && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: 16, borderBottom: '1px solid #e8e8e8' }}>
-              <Spin size="small" />
-              <span style={{ marginLeft: 8, color: '#666' }}>加载中...</span>
-            </div>
-          )}
-
-          {/* 添加行按钮 */}
-          <div
-            style={{
-              display: 'flex',
-              borderBottom: '1px solid #e8e8e8',
-              background: '#fafafa',
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ width: 50, padding: '12px', borderRight: '1px solid #e8e8e8' }} />
-            <div style={{ padding: '12px' }}>
-              <Button 
-                type="dashed" 
-                icon={<PlusOutlined />}
-                onClick={handleAddRow}
-              >
-                添加记录
-              </Button>
-            </div>
-            </div>
-          </div>
-        </div>
+        <TableView
+          model={model}
+          fields={fields}
+          data={data}
+          users={users}
+          visibleFields={visibleFields}
+          frozenColumns={frozenColumns}
+          columnWidths={columnWidths}
+          resizing={resizing}
+          editingCell={editingCell}
+          editValue={editValue}
+          commentCounts={commentCounts}
+          hoveredRow={hoveredRow}
+          loadingMore={loadingMore}
+          filters={filters}
+          sorts={sorts}
+          relationData={relationData}
+          allModels={allModels}
+          onColumnResize={handleMouseDown}
+          onCellClick={(row, field) => {
+            if (field.type === 'relation') {
+              setCurrentRelationField(field)
+              setCurrentRelationRow(row)
+              const cellValue = row[field.name]
+              if (typeof cellValue === 'string' && cellValue) {
+                setSelectedRelationIds(cellValue.split(',').filter((id: string) => id.trim()))
+              } else {
+                setSelectedRelationIds([])
+              }
+              loadRelationData(field, 1, 20)
+              setRelationModalVisible(true)
+            } else {
+              setEditingCell(`${row.id}-${field.name}`)
+              const cellValue = row[field.name]
+              if (field.type === 'multi_select' && typeof cellValue === 'string' && cellValue) {
+                setEditValue(cellValue.split(','))
+              } else {
+                setEditValue(cellValue || '')
+              }
+            }
+          }}
+          onEditChange={setEditValue}
+          onEditBlur={handleUpdateCell}
+          onDeleteRow={handleDeleteRow}
+          onScroll={handleScrollLoadMore}
+          onFieldMenuClick={(field, action) => {
+            if (action === 'edit') {
+              setCurrentField(field)
+              setDrawerVisible(true)
+            } else if (action === 'hide') {
+              setVisibleFields(visibleFields.filter(id => id !== field.id))
+            }
+          }}
+          onAddRow={handleAddRow}
+          onRowHover={setHoveredRow}
+          onRecordClick={(row) => {
+            setCurrentRecord(row)
+            setRecordDetailVisible(true)
+          }}
+          headerScrollRef={headerScrollRef}
+          bodyScrollRef={bodyScrollRef}
+        />
       )}
 
       {/* 添加记录Modal */}
