@@ -82,12 +82,12 @@ export const TableView: React.FC<TableViewProps> = ({
 
   const fieldMenu = (field: Field, fieldIndex: number): MenuProps => ({
     items: [
-      { key: 'edit', label: '编辑字段', onClick: () => onFieldMenuClick(field, 'edit') },
+      { key: 'edit', label: '编辑字段', disabled: field.is_lock, onClick: () => onFieldMenuClick(field, 'edit') },
       { type: 'divider' },
       { key: 'freeze', label: frozenColumns > fieldIndex ? '取消冻结' : '冻结到此列', onClick: () => onFieldMenuClick(field, 'freeze') },
       { key: 'hide', label: '隐藏字段', onClick: () => onFieldMenuClick(field, 'hide') },
       { type: 'divider' },
-      { key: 'delete', label: '删除字段', danger: true, onClick: () => onFieldMenuClick(field, 'delete') },
+      { key: 'delete', label: '删除字段', danger: true, disabled: field.is_lock, onClick: () => onFieldMenuClick(field, 'delete') },
     ],
   })
 
@@ -164,6 +164,50 @@ export const TableView: React.FC<TableViewProps> = ({
     if (field.type === 'user' && value) {
       const user = users.find((u: any) => u.id === value)
       if (user) return <Tag color="blue">{user.nickname || user.username}</Tag>
+    }
+
+    // 关联字段显示
+    if (field.type === 'relation' && field.relation_config) {
+      try {
+        const config = JSON.parse(field.relation_config)
+        const displayFields = config.display_fields || []
+        const relationDataField = row[field.name + '_data']
+        
+        if (relationDataField) {
+          // 处理多个关联值
+          if (Array.isArray(relationDataField)) {
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {relationDataField.map((item: any, i: number) => {
+                  const label = displayFields.length > 0
+                    ? displayFields.map((f: string) => item[f]).filter(Boolean).join(' - ')
+                    : item.name || item.id
+                  return <Tag key={i} color="purple" style={{ margin: 0 }}>{label}</Tag>
+                })}
+              </div>
+            )
+          }
+          // 单个关联值
+          const label = displayFields.length > 0
+            ? displayFields.map((f: string) => relationDataField[f]).filter(Boolean).join(' - ')
+            : relationDataField.name || relationDataField.id
+          return <Tag color="purple">{label}</Tag>
+        }
+        // 没有关联数据时显示ID
+        if (value) {
+          const ids = String(value).split(',').filter(Boolean)
+          if (ids.length > 1) {
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {ids.map((id: string, i: number) => (
+                  <Tag key={i} color="purple" style={{ margin: 0 }}>{id}</Tag>
+                ))}
+              </div>
+            )
+          }
+          return <Tag color="purple">{ids[0]}</Tag>
+        }
+      } catch {}
     }
 
     return <span style={{ color: value ? 'inherit' : '#bfbfbf' }}>{value || '点击编辑'}</span>

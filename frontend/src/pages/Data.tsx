@@ -247,7 +247,8 @@ const Data = () => {
         let loadedCalendarEnd = ''
         
         try {
-          const config = await viewConfigApi.get(foundModel.name, viewMode)
+          const currentViewMode = getInitialViewMode()
+          const config = await viewConfigApi.get(foundModel.name, currentViewMode)
           if (config && config.id) {
             if (config.filters) { try { loadedFilters = JSON.parse(config.filters) } catch (e) {} }
             if (config.sorts) { try { loadedSorts = JSON.parse(config.sorts) } catch (e) {} }
@@ -609,6 +610,83 @@ const Data = () => {
     message.success('模板下载成功')
   }
 
+  // 导出数据（按筛选条件）
+  const handleExportData = () => {
+    if (!model || !fields.length || !data.length) {
+      message.warning('暂无数据可导出')
+      return
+    }
+    
+    // 获取可见字段
+    const visibleFieldsList = fields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')
+    const headers = visibleFieldsList.map(f => f.display_name)
+    
+    // 构建CSV内容
+    const rows = data.map(row => {
+      return visibleFieldsList.map(field => {
+        const value = row[field.name]
+        if (value === null || value === undefined) return ''
+        
+        let displayValue = value
+        
+        // 处理用户字段
+        if (field.type === 'user' && value) {
+          const user = users.find((u: any) => u.id === value)
+          if (user) {
+            displayValue = user.nickname || user.username
+          }
+        }
+        
+        // 处理关联字段
+        if (field.type === 'relation' && field.relation_config) {
+          try {
+            const config = JSON.parse(field.relation_config)
+            const displayFields = config.display_fields || []
+            const relationDataField = row[field.name + '_data']
+            
+            if (relationDataField) {
+              if (Array.isArray(relationDataField)) {
+                displayValue = relationDataField.map((item: any) => {
+                  return displayFields.length > 0
+                    ? displayFields.map((f: string) => item[f]).filter(Boolean).join(' - ')
+                    : item.name || item.id
+                }).join(', ')
+              } else {
+                displayValue = displayFields.length > 0
+                  ? displayFields.map((f: string) => relationDataField[f]).filter(Boolean).join(' - ')
+                  : relationDataField.name || relationDataField.id
+              }
+            }
+          } catch {}
+        }
+        
+        // 处理多选字段
+        if (field.type === 'multi_select' && value) {
+          const values = Array.isArray(value) ? value : String(value).split(',')
+          displayValue = values.map((v: string) => v.trim()).join(', ')
+        }
+        
+        // 处理包含逗号或换行的值
+        const strValue = String(displayValue)
+        if (strValue.includes(',') || strValue.includes('\n') || strValue.includes('"')) {
+          return `"${strValue.replace(/"/g, '""')}"`
+        }
+        return strValue
+      }).join(',')
+    })
+    
+    const csvContent = headers.join(',') + '\n' + rows.join('\n')
+    
+    // 创建Blob并下载
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `${model.display_name}_导出数据.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    message.success(`成功导出 ${data.length} 条数据`)
+  }
+
   // Excel导入
   const handleImportExcel = async (file: File) => {
     if (!model) return false
@@ -794,6 +872,49 @@ const Data = () => {
     }
   }, [resizing, resizeStartX, resizeStartWidth])
 
+  // 当编辑字段时，设置表单值
+  useEffect(() => {
+    if (currentField && drawerVisible) {
+      // 解析选项
+      let optionsText = ''
+      if (currentField.options) {
+        try {
+          const opts = JSON.parse(currentField.options)
+          if (Array.isArray(opts)) {
+            optionsText = opts.join('\n')
+          }
+        } catch (e) {
+          console.error('Failed to parse options:', e)
+        }
+      }
+      
+      // 解析关联配置
+      let relationTargetModel = ''
+      let relationType = 'one_to_many'
+      let relationDisplayFields: string[] = []
+      if (currentField.relation_config) {
+        try {
+          const config = JSON.parse(currentField.relation_config)
+          relationTargetModel = config.target_model_id || ''
+          relationType = config.relation_type || 'one_to_many'
+          relationDisplayFields = config.display_fields || []
+        } catch (e) {
+          console.error('Failed to parse relation config:', e)
+        }
+      }
+      
+      fieldForm.setFieldsValue({
+        display_name: currentField.display_name,
+        type: currentField.type,
+        default_value: currentField.default_value,
+        options: optionsText,
+        relation_target_model: relationTargetModel,
+        relation_type: relationType,
+        relation_display_fields: relationDisplayFields,
+      })
+    }
+  }, [currentField, drawerVisible])
+
   // 是否已加载配置（避免加载后立即触发保存）
   const [configLoaded, setConfigLoaded] = useState(false)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
@@ -837,43 +958,6 @@ const Data = () => {
           if (field.is_lock) return
           setCurrentField(field)
           setDrawerVisible(true)
-          // 解析选项
-          let optionsText = ''
-          if (field.options) {
-            try {
-              const opts = JSON.parse(field.options)
-              if (Array.isArray(opts)) {
-                optionsText = opts.join('\n')
-              }
-            } catch (e) {
-              console.error('Failed to parse options:', e)
-            }
-          }
-          
-          // 解析关联配置
-          let relationTargetModel = ''
-          let relationType = 'one_to_many'
-          let relationDisplayFields: string[] = []
-          if (field.relation_config) {
-            try {
-              const config = JSON.parse(field.relation_config)
-              relationTargetModel = config.target_model_id || ''
-              relationType = config.relation_type || 'one_to_many'
-              relationDisplayFields = config.display_fields || []
-            } catch (e) {
-              console.error('Failed to parse relation config:', e)
-            }
-          }
-          
-          fieldForm.setFieldsValue({
-            display_name: field.display_name,
-            type: field.type,
-            default_value: field.default_value,
-            options: optionsText,
-            relation_target_model: relationTargetModel,
-            relation_type: relationType,
-            relation_display_fields: relationDisplayFields,
-          })
         },
       },
       {
@@ -978,7 +1062,7 @@ const Data = () => {
         <Space>
           <Radio.Group 
             value={viewMode}
-            onChange={(e) => {
+            onChange={async (e) => {
               const value = e.target.value
               setViewMode(value)
               // 更新URL
@@ -994,6 +1078,27 @@ const Data = () => {
                 const selectField = fields.find(f => f.type === 'select' || f.type === 'multi_select')
                 if (selectField) {
                   setKanbanField(selectField.name)
+                }
+              }
+              // 切换到日历视图时,加载日历视图配置
+              if (value === 'calendar' && model) {
+                try {
+                  const config = await viewConfigApi.get(model.name, 'calendar')
+                  if (config && config.id) {
+                    if (config.calendar_start) {
+                      setCalendarStartField(config.calendar_start)
+                      setCalendarEndField(config.calendar_end || config.calendar_start)
+                    } else {
+                      // 没有保存的配置,使用默认值
+                      const dateField = fields.find(f => f.type === 'date')
+                      if (dateField) {
+                        setCalendarStartField(dateField.name)
+                        setCalendarEndField(dateField.name)
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.error('Failed to load calendar config:', e)
                 }
               }
             }}
@@ -1079,22 +1184,6 @@ const Data = () => {
           >
             字段配置
           </Button>
-          <Button 
-            icon={<DownloadOutlined />}
-            onClick={handleDownloadTemplate}
-          >
-            下载模板
-          </Button>
-          <Upload
-            accept=".csv"
-            showUploadList={false}
-            beforeUpload={(file) => {
-              handleImportExcel(file)
-              return false
-            }}
-          >
-            <Button icon={<UploadOutlined />}>导入数据</Button>
-          </Upload>
           <Popover
             content={
               <div style={{ width: 300 }}>
@@ -1262,7 +1351,36 @@ const Data = () => {
 
       {/* 数据表格 */}
       {viewMode === 'table' && (
-        <TableView
+        <>
+          {/* 表格工具栏 */}
+          <div style={{ padding: '8px 24px', background: '#fff', borderBottom: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button 
+              icon={<DownloadOutlined />}
+              onClick={handleDownloadTemplate}
+            >
+              下载模板
+            </Button>
+            <Upload
+              accept=".csv"
+              showUploadList={false}
+              beforeUpload={(file) => {
+                handleImportExcel(file)
+                return false
+              }}
+            >
+              <Button icon={<UploadOutlined />}>导入数据</Button>
+            </Upload>
+            <Button 
+              icon={<DownloadOutlined />}
+              onClick={handleExportData}
+            >
+              导出数据
+            </Button>
+            {Object.keys(filters).length > 0 && (
+              <Tag color="blue">已应用筛选条件</Tag>
+            )}
+          </div>
+          <TableView
           model={model}
           fields={fields}
           data={data}
@@ -1324,6 +1442,7 @@ const Data = () => {
           headerScrollRef={headerScrollRef}
           bodyScrollRef={bodyScrollRef}
         />
+        </>
       )}
 
       {/* 添加记录Modal */}
