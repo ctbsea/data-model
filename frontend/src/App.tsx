@@ -12,6 +12,7 @@ import PageEditor from './pages/PageEditor'
 import DynamicPage from './pages/DynamicPage'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
+import PanelPage from './pages/dashboard/PanelPage'
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
         <Route path="model-list" element={<ModelList />} />
         <Route path="models/:id" element={<Models />} />
         <Route path="data/:modelName" element={<Data />} />
+        <Route path="panel/:panelId" element={<PanelPage />} />
         <Route path="workflows" element={<Workflows />} />
         <Route path="workflows/:id" element={<WorkflowDesigner />} />
         <Route path="pages" element={<Pages />} />

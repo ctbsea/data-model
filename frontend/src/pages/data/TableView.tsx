@@ -36,6 +36,7 @@ interface TableViewProps {
   onAddRow: () => void
   onRowHover: (rowId: string | null) => void
   onRecordClick: (row: any) => void
+  onEmailClick?: (email: string) => void
   headerScrollRef: React.RefObject<HTMLDivElement>
   bodyScrollRef: React.RefObject<HTMLDivElement>
 }
@@ -64,6 +65,7 @@ export const TableView: React.FC<TableViewProps> = ({
   onAddRow,
   onRowHover,
   onRecordClick,
+  onEmailClick,
   headerScrollRef,
   bodyScrollRef,
 }) => {
@@ -110,6 +112,30 @@ export const TableView: React.FC<TableViewProps> = ({
             style={{ width: '100%' }}
             options={options.map((opt: string) => ({ label: opt, value: opt }))}
           />
+        )
+      }
+      if (field.type === 'user') {
+        return (
+          <Select
+            autoFocus
+            open
+            showSearch
+            value={editValue}
+            onChange={(value) => {
+              onEditChange(value)
+              onEditBlur(row.id, field.name, value)
+            }}
+            onBlur={() => onEditBlur(row.id, field.name, editValue)}
+            size="small"
+            style={{ width: '100%' }}
+            filterOption={(input, option) => 
+              (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+            }
+          >
+            {users.map((u: any) => (
+              <Option key={u.id} value={u.id}>{u.nickname || u.username}</Option>
+            ))}
+          </Select>
         )
       }
       if (field.type === 'date') {
@@ -166,6 +192,11 @@ export const TableView: React.FC<TableViewProps> = ({
       if (user) return <Tag color="blue">{user.nickname || user.username}</Tag>
     }
 
+    // 日期字段显示
+    if (field.type === 'date' && value) {
+      return <span>{dayjs(value).format('YYYY-MM-DD')}</span>
+    }
+
     // 关联字段显示
     if (field.type === 'relation' && field.relation_config) {
       try {
@@ -208,6 +239,24 @@ export const TableView: React.FC<TableViewProps> = ({
           return <Tag color="purple">{ids[0]}</Tag>
         }
       } catch {}
+    }
+
+    // 邮件字段显示
+    if (field.type === 'email' && value) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>{value}</span>
+          <Button 
+            type="text" 
+            size="small" 
+            icon={<MailOutlined style={{ color: '#ff4d4f' }} />} 
+            onClick={(e) => {
+              e.stopPropagation()
+              onEmailClick?.(value)
+            }}
+          />
+        </div>
+      )
     }
 
     return <span style={{ color: value ? 'inherit' : '#bfbfbf' }}>{value || '点击编辑'}</span>

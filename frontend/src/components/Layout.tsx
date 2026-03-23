@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { Layout as AntLayout, Menu, theme, Button, Spin, message, Dropdown, Avatar, Modal, Input, Form } from 'antd'
+import { Layout as AntLayout, Menu, theme, Button, Spin, message, Dropdown, Avatar, Modal, Input, Form, Badge } from 'antd'
 import {
   DashboardOutlined,
   DatabaseOutlined,
@@ -9,11 +9,22 @@ import {
   LogoutOutlined,
   MailOutlined,
   SettingOutlined,
+  LayoutOutlined,
 } from '@ant-design/icons'
 import { modelApi, Model } from '../api/model'
 import { authApi, User } from '../api/auth'
+import { dashboardApi } from '../api/dashboard'
+import { emailApi } from '../api/email'
+import EmailModal from './EmailModal'
 
 const { Sider, Content } = AntLayout
+
+interface Panel {
+  id: string
+  name: string
+  widgets: any[]
+  layout: any[]
+}
 
 const Layout = () => {
   const [collapsed, setCollapsed] = useState(false)
@@ -22,16 +33,33 @@ const Layout = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [emailSettingVisible, setEmailSettingVisible] = useState(false)
   const [emailForm] = Form.useForm()
+  const [panels, setPanels] = useState<Panel[]>([])
+  const [addPanelVisible, setAddPanelVisible] = useState(false)
+  const [newPanelName, setNewPanelName] = useState('')
+  const [emailModalVisible, setEmailModalVisible] = useState(false)
+  const [unreadEmailCount, setUnreadEmailCount] = useState(0)
   const navigate = useNavigate()
   const location = useLocation()
   const {
     token: { colorBgContainer },
   } = theme.useToken()
 
+  // 获取未读邮件数量
+  const fetchUnreadCount = async () => {
+    try {
+      const res = await emailApi.getUnreadCount()
+      setUnreadEmailCount(res.count || 0)
+    } catch (error) {
+      console.error('Failed to fetch unread count:', error)
+    }
+  }
+
   // 获取模型列表
   useEffect(() => {
     fetchModels()
     fetchCurrentUser()
+    fetchPanels()
+    fetchUnreadCount()
   }, [])
 
   const fetchModels = async () => {
@@ -55,10 +83,24 @@ const Layout = () => {
     }
   }
 
+  const fetchPanels = async () => {
+    try {
+      const dashboardRes = await dashboardApi.get()
+      if (dashboardRes && dashboardRes.config) {
+        const config = JSON.parse(dashboardRes.config)
+        setPanels(config.panels || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch panels:', error)
+    }
+  }
+
   const handleMenuClick = ({ key }: { key: string }) => {
     if (key === '/dashboard' || key === '/model-list') {
       navigate(key)
     } else if (key.startsWith('/data/')) {
+      navigate(key)
+    } else if (key.startsWith('/panel/')) {
       navigate(key)
     }
   }
@@ -82,6 +124,37 @@ const Layout = () => {
       fetchCurrentUser()
     } catch (error: any) {
       message.error(error.response?.data?.error || '更新失败')
+    }
+  }
+
+  const handleAddPanel = async () => {
+    if (!newPanelName.trim()) {
+      message.warning('请输入面板名称')
+      return
+    }
+
+    const newPanel: Panel = {
+      id: `panel-${Date.now()}`,
+      name: newPanelName.trim(),
+      widgets: [],
+      layout: [],
+    }
+
+    const newPanels = [...panels, newPanel]
+    setPanels(newPanels)
+    setNewPanelName('')
+    setAddPanelVisible(false)
+
+    // 保存到后端
+    try {
+      await dashboardApi.save({
+        name: '仪表盘',
+        config: JSON.stringify({ panels: newPanels }),
+      })
+      message.success('面板添加成功')
+      navigate(`/panel/${newPanel.id}`)
+    } catch (error) {
+      console.error('Failed to save panel:', error)
     }
   }
 
@@ -120,6 +193,13 @@ const Layout = () => {
     key: `/data/${model.name}`,
     icon: <DatabaseOutlined />,
     label: model.display_name,
+  }))
+
+  // 面板菜单项
+  const panelMenuItems = panels.map(panel => ({
+    key: `/panel/${panel.id}`,
+    icon: <LayoutOutlined />,
+    label: panel.name,
   }))
 
   return (
@@ -168,7 +248,7 @@ const Layout = () => {
             flexShrink: 0,
           }} />
 
-          {/* 模型列表标题 */}
+          {/* 面板列表标题 */}
           <div style={{ 
             padding: '8px 24px', 
             fontSize: 12, 
@@ -178,13 +258,46 @@ const Layout = () => {
             alignItems: 'center',
             flexShrink: 0,
           }}>
-            <span>应用</span>
+            <span>面板</span>
             <Button 
               type="text" 
               size="small" 
               icon={<PlusOutlined />}
-              onClick={() => navigate('/model-list')}
+              onClick={() => setAddPanelVisible(true)}
             />
+          </div>
+          
+          {panels.length > 0 && (
+            <div style={{ flexShrink: 0 }}>
+              <Menu
+                mode="inline"
+                selectedKeys={[location.pathname]}
+                style={{ 
+                  borderRight: 0,
+                  background: colorBgContainer,
+                }}
+                items={panelMenuItems}
+                onClick={handleMenuClick}
+              />
+            </div>
+          )}
+
+          {/* 分割线 */}
+          <div style={{ 
+            height: 1, 
+            background: '#f0f0f0', 
+            margin: '8px 16px',
+            flexShrink: 0,
+          }} />
+
+          {/* 模型列表标题 */}
+          <div style={{ 
+            padding: '8px 24px', 
+            fontSize: 12, 
+            color: '#999',
+            flexShrink: 0,
+          }}>
+            <span>应用</span>
           </div>
 
           {/* 模型列表 */}
@@ -214,44 +327,56 @@ const Layout = () => {
             padding: '12px 16px',
             background: colorBgContainer,
           }}>
-            <Dropdown 
-              menu={{ items: userMenuItems }} 
-              placement="topLeft" 
-              trigger={['click']}
-            >
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                cursor: 'pointer',
-                gap: 8,
-              }}>
-                <Avatar 
-                  size={32} 
-                  icon={<UserOutlined />} 
-                  style={{ backgroundColor: '#1890ff' }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* 邮件图标 */}
+              <Badge count={unreadEmailCount} size="small">
+                <Button 
+                  type="text" 
+                  icon={<MailOutlined />} 
+                  onClick={() => setEmailModalVisible(true)}
+                  style={{ marginRight: 4 }}
                 />
-                <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ 
-                    fontSize: 14, 
-                    fontWeight: 500,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {currentUser?.nickname || currentUser?.username || '用户'}
-                  </div>
-                  <div style={{ 
-                    fontSize: 12, 
-                    color: '#999',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {currentUser?.email || ''}
+              </Badge>
+              <Dropdown 
+                menu={{ items: userMenuItems }} 
+                placement="topLeft" 
+                trigger={['click']}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  cursor: 'pointer',
+                  gap: 8,
+                  flex: 1,
+                }}>
+                  <Avatar 
+                    size={32} 
+                    icon={<UserOutlined />} 
+                    style={{ backgroundColor: '#1890ff' }}
+                  />
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <div style={{ 
+                      fontSize: 14, 
+                      fontWeight: 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {currentUser?.nickname || currentUser?.username || '用户'}
+                    </div>
+                    <div style={{ 
+                      fontSize: 12, 
+                      color: '#999',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {currentUser?.email || ''}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Dropdown>
+              </Dropdown>
+            </div>
           </div>
         </div>
       </Sider>
@@ -285,6 +410,37 @@ const Layout = () => {
             <Input placeholder="请输入您的邮件地址" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 邮件列表 */}
+      <EmailModal
+        visible={emailModalVisible}
+        email=""
+        onClose={() => {
+          setEmailModalVisible(false)
+          fetchUnreadCount()
+        }}
+      />
+
+      {/* 添加面板弹窗 */}
+      <Modal
+        title="添加面板"
+        open={addPanelVisible}
+        onOk={handleAddPanel}
+        onCancel={() => {
+          setAddPanelVisible(false)
+          setNewPanelName('')
+        }}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Input
+          placeholder="请输入面板名称"
+          value={newPanelName}
+          onChange={e => setNewPanelName(e.target.value)}
+          onPressEnter={handleAddPanel}
+          autoFocus
+        />
       </Modal>
     </AntLayout>
   )

@@ -1439,6 +1439,10 @@ const Data = () => {
             setCurrentRecord(row)
             setRecordDetailVisible(true)
           }}
+          onEmailClick={(email) => {
+            setCurrentEmail(email)
+            setEmailModalVisible(true)
+          }}
           headerScrollRef={headerScrollRef}
           bodyScrollRef={bodyScrollRef}
         />
