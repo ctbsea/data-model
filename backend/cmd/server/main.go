@@ -265,6 +265,13 @@ func main() {
 				emails.PUT("/:id/read", handlers.NewEmailHandler().MarkAsRead)
 				emails.DELETE("/:id", handlers.NewEmailHandler().DeleteEmail)
 			}
+
+			// 仪表盘管理
+			dashboards := protected.Group("/dashboards")
+			{
+				dashboards.GET("", handlers.NewDashboardHandler(utils.DB).GetDashboard)
+				dashboards.POST("", handlers.NewDashboardHandler(utils.DB).SaveDashboard)
+			}
 		}
 	}
 

@@ -19,20 +19,8 @@ services:
     networks:
       - dmdp-network
 
-  redis:
-    image: redis:7-alpine
-    container_name: dmdp-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - dmdp-network
-
 volumes:
   mysql_data:
-  redis_data:
 
 networks:
   dmdp-network:

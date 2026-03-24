@@ -269,3 +269,13 @@ type CommentCount struct {
 	Count     int       `json:"count" gorm:"default:0"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// Dashboard 仪表盘配置
+type Dashboard struct {
+	ID        string    `json:"id" gorm:"primaryKey;size:64"`
+	UserID    string    `json:"user_id" gorm:index;size:64;not null"`
+	Name      string    `json:"name" gorm:"size:128;not null"`
+	Config    string    `json:"config" gorm:"type:json"` // JSON: { panels: [] }
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

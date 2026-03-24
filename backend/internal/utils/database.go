@@ -63,6 +63,7 @@ func AutoMigrate() error {
 		&models.ViewConfig{},
 		&models.CommentCount{},
 		&models.Email{},
+		&models.Dashboard{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto migrate: %w", err)
