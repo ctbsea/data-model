@@ -222,16 +222,15 @@ type Page struct {
 
 // ChangeLog 变更日志
 type ChangeLog struct {
-	ID         string      `json:"id" gorm:"primaryKey;size:64"`
-	ModelName  string      `json:"model_name" gorm:"index;size:64"`
-	RowID      string      `json:"row_id" gorm:"index;size:64"`
-	FieldName  string      `json:"field_name" gorm:"size:64"`
-	OldValue   interface{} `json:"old_value" gorm:"type:json"`
-	NewValue   interface{} `json:"new_value" gorm:"type:json"`
-	Version    int64       `json:"version" gorm:"uniqueIndex:idx_model_version"`
-	Operation  string      `json:"operation" gorm:"size:20"`
-	ChangedBy  string      `json:"changed_by" gorm:"size:64"`
-	ChangedAt  time.Time   `json:"changed_at"`
+	ID         string    `json:"id" gorm:"primaryKey;size:64"`
+	ModelName  string    `json:"model_name" gorm:"index;size:64"`
+	RowID      string    `json:"row_id" gorm:"index;size:64"`
+	FieldName  string    `json:"field_name" gorm:"size:64"`
+	OldValue   string    `json:"old_value" gorm:"type:json"`
+	NewValue   string    `json:"new_value" gorm:"type:json"`
+	Operation  string    `json:"operation" gorm:"size:20"`
+	ChangedBy  string    `json:"changed_by" gorm:"size:64"`
+	ChangedAt  time.Time `json:"changed_at"`
 }
 
 // CellLock 单元格锁

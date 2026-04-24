@@ -3,11 +3,11 @@ server:
   mode: debug  # debug, release, test
 
 database:
-  host: 10.10.1.45
-  port: 3306
-  name: tables
-  user: rabbitdb
-  password: rabbitdb
+  host: 127.0.0.1
+  port: 5432
+  name: dmdp
+  user: dmdp
+  password: dmdp123
   max_idle_conns: 10
   max_open_conns: 100
   conn_max_lifetime: 3600

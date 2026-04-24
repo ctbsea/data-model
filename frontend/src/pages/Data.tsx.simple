@@ -1,0 +1,251 @@
+// Data.tsx 重构版本 - 模块化设计
+
+import React, { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { message, Spin, Button, Table, Modal, Form } from 'antd'
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import { modelApi, Model, Field } from '../api/model'
+import { dataApi } from '../api/data'
+import {
+  useDataState,
+  useEditState,
+  useFilterSortState,
+  useViewState,
+  useTableState,
+  useRelationState,
+  FieldEditor,
+  FieldDisplay,
+  createRecord,
+  updateRecord,
+  deleteRecord,
+  exportToCSV
+} from './data/index'
+
+const Data: React.FC = () => {
+  const { modelName } = useParams<{ modelName: string }>()
+  const navigate = useNavigate()
+
+  // 使用自定义 hooks 管理状态
+  const dataState = useDataState()
+  const editState = useEditState()
+  const filterSortState = useFilterSortState()
+  const viewState = useViewState(new URLSearchParams())
+  const tableState = useTableState()
+  const relationState = useRelationState()
+
+  const [model, setModel] = useState<Model | null>(null)
+  const [fields, setFields] = useState<Field[]>([])
+  const [addModalVisible, setAddModalVisible] = useState(false)
+  const [form] = Form.useForm()
+
+  // 加载模型和数据
+  useEffect(() => {
+    if (modelName) {
+      loadModel()
+      loadData()
+    }
+  }, [modelName])
+
+  const loadModel = async () => {
+    try {
+      const response = await modelApi.list(1, 100)
+      const foundModel = response.models.find((m: Model) => m.name === modelName)
+      if (foundModel) {
+        setModel(foundModel)
+        setFields(foundModel.fields || [])
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '加载模型失败')
+    }
+  }
+
+  const loadData = async () => {
+    if (!model) return
+    dataState.setLoading(true)
+    try {
+      const dataResponse = await dataApi.list(modelName!, dataState.page, dataState.pageSize)
+      dataState.setData(dataResponse.data || [])
+      dataState.setTotal(dataResponse.total || 0)
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '加载数据失败')
+    } finally {
+      dataState.setLoading(false)
+    }
+  }
+
+  // 添加记录
+  const handleAdd = async (values: any) => {
+    try {
+      await createRecord(modelName!, values, () => {
+        setAddModalVisible(false)
+        form.resetFields()
+        loadData()
+      })
+    } catch (error) {
+      // 错误已在 createRecord 中处理
+    }
+  }
+
+  // 编辑单元格
+  const handleCellEdit = async (record: any, field: Field, value: any) => {
+    try {
+      await updateRecord(modelName!, record.id, { [field.name]: value }, () => {
+        loadData()
+      })
+    } catch (error) {
+      // 错误已在 updateRecord 中处理
+    }
+  }
+
+  // 删除记录
+  const handleDelete = async (id: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这条记录吗?',
+      onOk: async () => {
+        try {
+          await deleteRecord(modelName!, id, () => {
+            loadData()
+          })
+        } catch (error) {
+          // 错误已在 deleteRecord 中处理
+        }
+      }
+    })
+  }
+
+  // 导出数据
+  const handleExport = () => {
+    exportToCSV(dataState.data, fields, `${modelName}.csv`)
+  }
+
+  // 表格列定义
+  const columns = fields.map(field => ({
+    title: field.display_name || field.name,
+    dataIndex: field.name,
+    key: field.name,
+    width: tableState.columnWidths[field.name] || 150,
+    render: (value: any, record: any) => {
+      const cellKey = `${record.id}-${field.name}`
+      const isEditing = editState.editingCell === cellKey
+
+      if (isEditing) {
+        return (
+          <FieldEditor
+            field={field}
+            value={editState.editValue}
+            onChange={editState.setEditValue}
+            relationData={relationState.relationData[field.name]}
+            style={{ width: '100%' }}
+          />
+        )
+      }
+
+      return (
+        <div
+          onClick={() => editState.startEdit(cellKey, value)}
+          style={{ cursor: 'pointer', minHeight: 24 }}
+        >
+          <FieldDisplay
+            field={field}
+            value={value}
+            relationData={relationState.relationData[field.name]}
+          />
+        </div>
+      )
+    }
+  }))
+
+  // 添加操作列
+  columns.push({
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render: (_: any, record: any) => (
+      <Button
+        type="link"
+        danger
+        icon={<DeleteOutlined />}
+        onClick={() => handleDelete(record.id)}
+      >
+        删除
+      </Button>
+    )
+  })
+
+  if (dataState.loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: 100 }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding: 24 }}>
+      {/* 工具栏 */}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+        <h2>{model?.display_name || modelName}</h2>
+        <div>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setAddModalVisible(true)}
+            style={{ marginRight: 8 }}
+          >
+            添加记录
+          </Button>
+          <Button icon={<DeleteOutlined />} onClick={handleExport}>
+            导出
+          </Button>
+        </div>
+      </div>
+
+      {/* 数据表格 */}
+      <Table
+        columns={columns}
+        dataSource={dataState.data}
+        rowKey="id"
+        pagination={{
+          current: dataState.page,
+          pageSize: dataState.pageSize,
+          total: dataState.total,
+          onChange: (page, pageSize) => {
+            dataState.setPage(page)
+            dataState.setPageSize(pageSize)
+          }
+        }}
+      />
+
+      {/* 添加记录弹窗 */}
+      <Modal
+        title="添加记录"
+        open={addModalVisible}
+        onCancel={() => {
+          setAddModalVisible(false)
+          form.resetFields()
+        }}
+        onOk={() => form.submit()}
+      >
+        <Form form={form} layout="vertical" onFinish={handleAdd}>
+          {fields.map(field => (
+            <Form.Item
+              key={field.id}
+              label={field.display_name || field.name}
+              name={field.name}
+              rules={field.required ? [{ required: true, message: `请输入${field.display_name}` }] : []}
+            >
+              <FieldEditor
+                field={field}
+                value={form.getFieldValue(field.name)}
+                onChange={(value) => form.setFieldsValue({ [field.name]: value })}
+              />
+            </Form.Item>
+          ))}
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+export default Data

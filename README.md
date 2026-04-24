@@ -41,7 +41,7 @@
 - Go 1.21+
 - Gin (Web 框架)
 - GORM (ORM)
-- MySQL 8.0+ (主数据库)
+- PostgreSQL 15+ (主数据库)
 - Redis (缓存)
 - JWT (认证)
 - Zap (日志)

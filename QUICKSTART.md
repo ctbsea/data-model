@@ -62,16 +62,16 @@ npm run dev
 
 ### 方式二: 本地开发环境
 
-#### 1. 安装 MySQL 和 Redis
+#### 1. 安装 PostgreSQL 和 Redis
 
 确保本地已安装:
-- MySQL 8.0+
+- PostgreSQL 15+
 - Redis 7+
 
 #### 2. 创建数据库
 
 ```sql
-CREATE DATABASE dmdp DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE dmdp WITH ENCODING 'UTF8';
 ```
 
 #### 3. 配置环境变量
@@ -99,9 +99,9 @@ REDIS_PORT=6379
 ```yaml
 database:
   host: localhost
-  port: 3306
+  port: 5432
   name: dmdp
-  user: root
+  user: postgres
   password: your_password
 
 redis:

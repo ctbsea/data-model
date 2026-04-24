@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/dmdp/platform/internal/utils"
 	"gorm.io/gorm"
@@ -50,8 +52,35 @@ func (r *dynamicRepository) Create(tableName string, data map[string]interface{}
 	// 生成ID
 	id := generateUUID()
 	data["id"] = id
+	
+	// 添加系统字段
+	now := time.Now()
+	if _, ok := data["created_at"]; !ok {
+		data["created_at"] = now
+	}
+	if _, ok := data["updated_at"]; !ok {
+		data["updated_at"] = now
+	}
 
-	if err := r.db.Table(tableName).Create(&data).Error; err != nil {
+	// 构建 INSERT SQL (PostgreSQL 兼容)
+	fields := make([]string, 0, len(data))
+	placeholders := make([]string, 0, len(data))
+	values := make([]interface{}, 0, len(data))
+
+	i := 1
+	for field, value := range data {
+		fields = append(fields, field)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
+		values = append(values, value)
+		i++
+	}
+
+	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		tableName,
+		joinFields(fields),
+		joinPlaceholders(placeholders))
+
+	if err := r.db.Exec(sql, values...).Error; err != nil {
 		return "", fmt.Errorf("failed to create data: %w", err)
 	}
 
@@ -59,8 +88,10 @@ func (r *dynamicRepository) Create(tableName string, data map[string]interface{}
 }
 
 func (r *dynamicRepository) GetByID(tableName, id string) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	if err := r.db.Table(tableName).Where("id = ?", id).First(&result).Error; err != nil {
+	result := make(map[string]interface{})
+	// 使用 Raw SQL 避免 GORM 缓存问题
+	sql := fmt.Sprintf("SELECT * FROM %s WHERE id = ?", tableName)
+	if err := r.db.Raw(sql, id).Scan(&result).Error; err != nil {
 		return nil, fmt.Errorf("failed to get data: %w", err)
 	}
 	return result, nil
@@ -81,7 +112,10 @@ func (r *dynamicRepository) List(tableName string, query *QueryOptions) ([]map[s
 	var results []map[string]interface{}
 	var total int64
 
-	db := r.db.Table(tableName)
+	// 使用 Raw SQL 避免 GORM 缓存问题
+	sql := fmt.Sprintf("SELECT * FROM %s", tableName)
+	var args []interface{}
+	var conditions []string
 
 	// 应用过滤条件
 	if query.Filter != nil {
@@ -92,57 +126,73 @@ func (r *dynamicRepository) List(tableName string, query *QueryOptions) ([]map[s
 				value := filterMap["value"]
 				switch condition {
 				case "equals":
-					db = db.Where(fmt.Sprintf("%s = ?", field), value)
+					conditions = append(conditions, fmt.Sprintf("%s = ?", field))
+					args = append(args, value)
 				case "not_equals":
-					db = db.Where(fmt.Sprintf("%s != ?", field), value)
+					conditions = append(conditions, fmt.Sprintf("%s != ?", field))
+					args = append(args, value)
 				case "contains":
-					db = db.Where(fmt.Sprintf("%s LIKE ?", field), fmt.Sprintf("%%%v%%", value))
+					conditions = append(conditions, fmt.Sprintf("%s LIKE ?", field))
+					args = append(args, fmt.Sprintf("%%%v%%", value))
 				case "not_contains":
-					db = db.Where(fmt.Sprintf("%s NOT LIKE ?", field), fmt.Sprintf("%%%v%%", value))
+					conditions = append(conditions, fmt.Sprintf("%s NOT LIKE ?", field))
+					args = append(args, fmt.Sprintf("%%%v%%", value))
 				case "date_range":
-					// 日期范围筛选
 					start, _ := filterMap["start"].(string)
 					end, _ := filterMap["end"].(string)
 					if start != "" && end != "" {
-						db = db.Where(fmt.Sprintf("%s >= ? AND %s <= ?", field, field), start, end)
+						conditions = append(conditions, fmt.Sprintf("%s >= ? AND %s <= ?", field, field))
+						args = append(args, start, end)
 					} else if start != "" {
-						db = db.Where(fmt.Sprintf("%s >= ?", field), start)
+						conditions = append(conditions, fmt.Sprintf("%s >= ?", field))
+						args = append(args, start)
 					} else if end != "" {
-						db = db.Where(fmt.Sprintf("%s <= ?", field), end)
+						conditions = append(conditions, fmt.Sprintf("%s <= ?", field))
+						args = append(args, end)
 					}
 				default:
-					db = db.Where(fmt.Sprintf("%s = ?", field), value)
+					conditions = append(conditions, fmt.Sprintf("%s = ?", field))
+					args = append(args, value)
 				}
 			} else {
 				// 简单值直接等于
-				db = db.Where(fmt.Sprintf("%s = ?", field), filterValue)
+				conditions = append(conditions, fmt.Sprintf("%s = ?", field))
+				args = append(args, filterValue)
 			}
 		}
 	}
 
+	// 构建 WHERE 子句
+	if len(conditions) > 0 {
+		sql += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
 	// 获取总数
-	if err := db.Count(&total).Error; err != nil {
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
+	if len(conditions) > 0 {
+		countSQL += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	if err := r.db.Raw(countSQL, args...).Scan(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to count data: %w", err)
 	}
 
 	// 应用排序
-	for _, sort := range query.Sort {
-		db = db.Order(fmt.Sprintf("%s %s", sort.Field, sort.Order))
+	if len(query.Sort) > 0 {
+		var orders []string
+		for _, sort := range query.Sort {
+			orders = append(orders, fmt.Sprintf("%s %s", sort.Field, sort.Order))
+		}
+		sql += " ORDER BY " + strings.Join(orders, ", ")
 	}
 
 	// 应用分页
 	if query.Page > 0 && query.PageSize > 0 {
 		offset := (query.Page - 1) * query.PageSize
-		db = db.Offset(offset).Limit(query.PageSize)
-	}
-
-	// 选择字段
-	if len(query.Fields) > 0 {
-		db = db.Select(query.Fields)
+		sql += fmt.Sprintf(" LIMIT %d OFFSET %d", query.PageSize, offset)
 	}
 
 	// 查询数据
-	if err := db.Find(&results).Error; err != nil {
+	if err := r.db.Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to list data: %w", err)
 	}
 
@@ -205,4 +255,26 @@ func (r *dynamicRepository) BatchDelete(tableName string, ids []string) error {
 
 func generateUUID() string {
 	return fmt.Sprintf("%d", utils.DB.NowFunc().UnixNano())
+}
+
+func joinFields(fields []string) string {
+	result := ""
+	for i, field := range fields {
+		if i > 0 {
+			result += ", "
+		}
+		result += field
+	}
+	return result
+}
+
+func joinPlaceholders(placeholders []string) string {
+	result := ""
+	for i, ph := range placeholders {
+		if i > 0 {
+			result += ", "
+		}
+		result += ph
+	}
+	return result
 }

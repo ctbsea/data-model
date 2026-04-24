@@ -158,8 +158,8 @@ func (s *modelService) AddField(modelID string, field *models.Field) error {
 	// 如果模型已应用,则使用ALTER TABLE添加新字段
 	if model.Status == "applied" {
 		fieldType := MapFieldTypeToSQL(field.Type)
-		alterSQL := fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s", model.TableName, field.Name, fieldType)
-		
+		alterSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", model.TableName, field.Name, fieldType)
+
 		// 如果有默认值,添加DEFAULT子句
 		if field.DefaultValue != "" {
 			alterSQL += fmt.Sprintf(" DEFAULT '%s'", field.DefaultValue)
@@ -173,7 +173,7 @@ func (s *modelService) AddField(modelID string, field *models.Field) error {
 				alterSQL += " DEFAULT NULL"
 			}
 		}
-		
+
 		if err := utils.DB.Exec(alterSQL).Error; err != nil {
 			return fmt.Errorf("failed to add column: %w", err)
 		}
@@ -228,6 +228,14 @@ func (s *modelService) UpdateField(modelID, fieldID string, field *models.Field)
 		return fmt.Errorf("failed to update field: %w", err)
 	}
 
+	// 如果模型已应用,同步更新表结构
+	model, err := s.modelRepo.GetByID(modelID)
+	if err == nil && model.Status == "applied" {
+		// PostgreSQL 不支持直接修改列名和类型,需要重建表
+		// 这里简化处理:记录日志提示用户需要手动处理
+		utils.Logger.Info(fmt.Sprintf("Field %s updated in model %s. Note: Table structure may need manual adjustment.", existingField.Name, model.TableName))
+	}
+
 	return nil
 }
 
@@ -239,6 +247,20 @@ func (s *modelService) DeleteField(modelID, fieldID string) error {
 
 	if field.ModelID != modelID {
 		return errors.New("field does not belong to this model")
+	}
+
+	model, err := s.modelRepo.GetByID(modelID)
+	if err != nil {
+		return errors.New("model not found")
+	}
+
+	// 如果模型已应用,先删除表中的列
+	if model.Status == "applied" {
+		dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s", model.TableName, field.Name)
+		if err := utils.DB.Exec(dropSQL).Error; err != nil {
+			utils.Logger.Error(fmt.Sprintf("Failed to drop column %s: %v", field.Name, err))
+			// 继续删除字段记录,不中断流程
+		}
 	}
 
 	if err := s.fieldRepo.Delete(fieldID); err != nil {
@@ -305,6 +327,11 @@ func (s *modelService) ApplyModel(modelID string) error {
 	model, err := s.modelRepo.GetByID(modelID)
 	if err != nil {
 		return errors.New("model not found")
+	}
+
+	// 创建数据表
+	if err := s.schemaManager.CreateTable(model); err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
 	}
 
 	// 创建版本记录

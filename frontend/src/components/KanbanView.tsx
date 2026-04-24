@@ -45,7 +45,16 @@ const KanbanView: React.FC<KanbanViewProps> = ({
     if (!field) return []
     
     try {
-      return JSON.parse(field.options || '[]')
+      let options = JSON.parse(field.options || '[]')
+      // 处理双重编码
+      if (Array.isArray(options) && options.length === 1 && typeof options[0] === 'string') {
+        options = JSON.parse(options[0])
+      }
+      // 新格式: [{label, color}] -> 返回 label 数组
+      if (Array.isArray(options) && options.length > 0 && options[0]?.label) {
+        return options.map((opt: any) => opt.label)
+      }
+      return options
     } catch {
       return []
     }

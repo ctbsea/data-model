@@ -4,17 +4,18 @@ import dayjs from 'dayjs'
 import KanbanView from '../components/KanbanView'
 import RecordDetail from '../components/RecordDetail'
 import EmailModal from '../components/EmailModal'
+import { RecordFormModal } from './data/components/RecordFormModal'
 import { commentApi } from '../api/comment'
-import { 
-  message, 
-  Spin, 
-  Button, 
-  Space, 
-  Drawer, 
-  Form, 
-  Input, 
+import {
+  message,
+  Spin,
+  Button,
+  Space,
+  Drawer,
+  Form,
+  Input,
   InputNumber,
-  Select, 
+  Select,
   Dropdown,
   Modal,
   Tag,
@@ -25,8 +26,8 @@ import {
   Badge,
   Upload
 } from 'antd'
-import { 
-  PlusOutlined, 
+import {
+  PlusOutlined,
   DeleteOutlined,
   FilterOutlined,
   SortAscendingOutlined,
@@ -51,7 +52,36 @@ import { userApi } from '../api/user'
 import { emailApi } from '../api/email'
 import type { MenuProps } from 'antd'
 import { useAuthStore } from '../stores/authStore'
-import { TableView, CalendarView, AddRecordModal, FilterModal, getFieldIcon, getFieldColor } from './data/index'
+import {
+  TableView,
+  CalendarView,
+  AddRecordModal,
+  FilterModal,
+  getFieldIcon,
+  getFieldColor,
+  AddFieldPopover,
+  EditFieldDrawer,
+  FieldModal,
+  FieldConfigDrawer,
+  RelationSelectModal,
+  AddRecordModalComponent,
+  FilterModalComponent,
+  SortModalComponent,
+  FieldEditor,
+  FieldDisplay,
+  useDataState,
+  useEditState,
+  useFilterSortState,
+  useViewState,
+  useTableState,
+  useRelationState,
+  createRecord,
+  updateRecord,
+  deleteRecord,
+  batchDeleteRecords,
+  exportToCSV,
+  importFromCSV
+} from './data/index'
 
 const { Option } = Select
 
@@ -219,23 +249,26 @@ const Data = () => {
         // 0. 加载用户列表
         const userRes = await userApi.list(1, 100)
         setUsers(userRes.users || [])
-        
-        // 获取未读邮件数量
-        fetchUnreadCount()
-        
+
         // 1. 获取模型列表
         const response = await modelApi.list(1, 100)
         setAllModels(response.models || [])
-        
+
         const foundModel = response.models.find((m: Model) => m.name === modelName)
         if (!foundModel) {
           message.error('模型不存在')
           return
         }
-        
+
         setModel(foundModel)
         const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => a.order - b.order)
         setFields(sortedFields)
+
+        // 检查是否有 email 字段,有才获取未读邮件数量
+        const hasEmailField = sortedFields.some((f: Field) => f.type === 'email')
+        if (hasEmailField) {
+          fetchUnreadCount()
+        }
         
         // 2. 加载视图配置
         let loadedFilters = {}
@@ -1184,108 +1217,12 @@ const Data = () => {
           >
             字段配置
           </Button>
-          <Popover
-            content={
-              <div style={{ width: 300 }}>
-                <Form
-                  form={fieldForm}
-                  layout="vertical"
-                  onFinish={handleAddField}
-                >
-                  <Form.Item
-                    label="字段名称"
-                    name="display_name"
-                    rules={[{ required: true, message: '请输入字段名称' }]}
-                  >
-                    <Input placeholder="输入字段名称" autoFocus />
-                  </Form.Item>
-                  <Form.Item
-                    label="字段类型"
-                    name="type"
-                    rules={[{ required: true, message: '请选择字段类型' }]}
-                    initialValue="text"
-                  >
-                    <Select onChange={(value) => {
-                      if (value === 'select' || value === 'multi_select') {
-                        fieldForm.setFieldsValue({ showOptions: true })
-                      } else {
-                        fieldForm.setFieldsValue({ showOptions: false })
-                      }
-                    }}>
-                      <Option value="text">单行文本</Option>
-                      <Option value="email">邮箱</Option>
-                      <Option value="url">链接</Option>
-                      <Option value="number">数字</Option>
-                      <Option value="select">单选</Option>
-                      <Option value="multi_select">多选</Option>
-                      <Option value="boolean">复选框</Option>
-                      <Option value="date">日期</Option>
-                      <Option value="relation">关联</Option>
-                      <Option value="user">用户</Option>
-                    </Select>
-                  </Form.Item>
-                  <Form.Item
-                    noStyle
-                    shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
-                  >
-                    {({ getFieldValue }) => {
-                      const type = getFieldValue('type')
-                      if (type === 'select' || type === 'multi_select') {
-                        return (
-                          <Form.Item
-                            label="选项列表(每行一个)"
-                            name="options"
-                            rules={[{ required: true, message: '请输入选项' }]}
-                          >
-                            <Input.TextArea rows={4} placeholder="选项1&#10;选项2&#10;选项3" />
-                          </Form.Item>
-                        )
-                      }
-                      if (type === 'relation') {
-                        return (
-                          <>
-                            <Form.Item
-                              label="关联表"
-                              name="relation_target_model"
-                              rules={[{ required: true, message: '请选择关联表' }]}
-                            >
-                              <Select placeholder="选择要关联的表">
-                                {allModels.map((m: Model) => (
-                                  <Option key={m.id} value={m.id}>{m.display_name}</Option>
-                                ))}
-                              </Select>
-                            </Form.Item>
-                            <Form.Item
-                              label="关联类型"
-                              name="relation_type"
-                              initialValue="one_to_many"
-                            >
-                              <Select>
-                                <Option value="one_to_one">一对一</Option>
-                                <Option value="one_to_many">一对多</Option>
-                                <Option value="many_to_many">多对多</Option>
-                              </Select>
-                            </Form.Item>
-                          </>
-                        )
-                      }
-                      return null
-                    }}
-                  </Form.Item>
-                  <Form.Item style={{ marginBottom: 0 }}>
-                    <Button type="primary" htmlType="submit" block>
-                      添加字段
-                    </Button>
-                  </Form.Item>
-                </Form>
-              </div>
-            }
-            title="添加字段"
-            trigger="click"
-            placement="bottomRight"
+          <Button 
+            icon={<PlusOutlined />}
+            onClick={() => setAddFieldPopoverVisible(true)}
           >
-            <Button icon={<PlusOutlined />}>添加字段</Button>
-          </Popover>
+            添加字段
+          </Button>
         </Space>
       </div>
 
@@ -1431,6 +1368,17 @@ const Data = () => {
               setDrawerVisible(true)
             } else if (action === 'hide') {
               setVisibleFields(visibleFields.filter(id => id !== field.id))
+            } else if (action === 'freeze') {
+              const fieldIndex = fields.filter(f => !f.deleted && visibleFields.includes(f.id!)).findIndex(f => f.id === field.id)
+              if (fieldIndex >= 0) {
+                if (frozenColumns > fieldIndex) {
+                  setFrozenColumns(fieldIndex)
+                  message.success('已取消冻结')
+                } else {
+                  setFrozenColumns(fieldIndex + 1)
+                  message.success(`已冻结前 ${fieldIndex + 1} 列`)
+                }
+              }
             }
           }}
           onAddRow={handleAddRow}
@@ -1450,734 +1398,106 @@ const Data = () => {
       )}
 
       {/* 添加记录Modal */}
-      <Modal
-        title="添加记录"
-        open={addRecordModalVisible}
+      <RecordFormModal
+        visible={addRecordModalVisible}
+        record={undefined}
+        model={model}
+        fields={fields}
+        form={addRecordForm}
+        onSubmit={handleAddRecordSubmit}
         onCancel={() => {
           setAddRecordModalVisible(false)
           addRecordForm.resetFields()
         }}
-        footer={null}
-        width={600}
-      >
-        <Form
-          form={addRecordForm}
-          layout="vertical"
-          onFinish={handleAddRecordSubmit}
-        >
-          {fields.filter(f => !f.deleted).map(field => (
-            <Form.Item
-              key={field.id}
-              label={field.display_name}
-              name={field.name}
-            >
-              {field.type === 'text' || field.type === 'email' || field.type === 'url' ? (
-                <Input placeholder={`请输入${field.display_name}`} />
-              ) : field.type === 'number' ? (
-                <InputNumber style={{ width: '100%' }} placeholder={`请输入${field.display_name}`} />
-              ) : field.type === 'select' ? (
-                <Select placeholder={`请选择${field.display_name}`}>
-                  {JSON.parse(field.options || '[]').map((opt: string) => (
-                    <Option key={opt} value={opt}>{opt}</Option>
-                  ))}
-                </Select>
-              ) : field.type === 'multi_select' ? (
-                <Select mode="multiple" placeholder={`请选择${field.display_name}`}>
-                  {JSON.parse(field.options || '[]').map((opt: string) => (
-                    <Option key={opt} value={opt}>{opt}</Option>
-                  ))}
-                </Select>
-              ) : field.type === 'date' ? (
-                <DatePicker style={{ width: '100%' }} />
-              ) : field.type === 'boolean' ? (
-                <Select>
-                  <Option value={true}>是</Option>
-                  <Option value={false}>否</Option>
-                </Select>
-              ) : field.type === 'user' ? (
-                <Select placeholder={`请选择${field.display_name}`}>
-                  {users.map(user => (
-                    <Option key={user.id} value={user.id}>{user.nickname || user.username}</Option>
-                  ))}
-                </Select>
-              ) : field.type === 'relation' ? (
-                <Select
-                  mode={(() => {
-                    try {
-                      const config = JSON.parse(field.relation_config || '{}')
-                      return config.allow_multiple ? 'multiple' : undefined
-                    } catch {
-                      return undefined
-                    }
-                  })()}
-                  placeholder={`请选择${field.display_name}`}
-                  showSearch
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                >
-                  {(() => {
-                    const records = relationData[field.name] || []
-                    const config = JSON.parse(field.relation_config || '{}')
-                    const displayFields = config.display_fields || []
-                    
-                    return records.map((rec: any) => {
-                      const label = displayFields.length > 0
-                        ? displayFields.map((f: string) => rec[f]).filter(Boolean).join(' - ')
-                        : rec.name || rec.id
-                      
-                      return (
-                        <Option key={rec.id} value={rec.id} label={label}>
-                          {label}
-                        </Option>
-                      )
-                    })
-                  })()}
-                </Select>
-              ) : (
-                <Input placeholder={`请输入${field.display_name}`} />
-              )}
-            </Form.Item>
-          ))}
-          <Form.Item>
-            <Button type="primary" htmlType="submit" block>
-              添加
-            </Button>
-          </Form.Item>
-        </Form>
-      </Modal>
+      />
 
       {/* 筛选Modal */}
-      <Modal
-        title="筛选"
-        open={filterVisible}
-        onCancel={() => setFilterVisible(false)}
-        onOk={() => {
-          setFilterVisible(false)
-          message.success('筛选已应用')
-        }}
-        width={600}
-      >
-        <div style={{ marginBottom: 16 }}>
-          {Object.entries(filters).map(([fieldName, filter]: [string, any]) => {
-            const field = fields.find(f => f.name === fieldName)
-            return (
-              <div key={fieldName} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: '#fafafa', borderRadius: 4 }}>
-                <span style={{ fontWeight: 500, minWidth: 80 }}>{field?.display_name || fieldName}</span>
-                <span style={{ color: '#666' }}>
-                  {filter.condition === 'equals' ? '等于' :
-                   filter.condition === 'not_equals' ? '不等于' :
-                   filter.condition === 'contains' ? '包含' : '不包含'}
-                </span>
-                <Tag color="blue">{filter.value}</Tag>
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => {
-                  const newFilters = { ...filters }
-                  delete newFilters[fieldName]
-                  setFilters(newFilters)
-                }} />
-              </div>
-            )
-          })}
-        </div>
-        <Form layout="vertical">
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Form.Item style={{ flex: 1 }}>
-              <Select 
-                placeholder="选择字段"
-                value={currentField?.name}
-                onChange={(value) => setCurrentField(fields.find(f => f.name === value) || null)}
-              >
-                {fields.filter(f => f.type !== 'relation').map(field => (
-                  <Option key={field.id} value={field.name}>{field.display_name}</Option>
-                ))}
-              </Select>
-            </Form.Item>
-            <Form.Item style={{ width: 100 }}>
-              <Select 
-                placeholder="条件"
-                value={currentFilterCondition}
-                onChange={(value) => setCurrentFilterCondition(value)}
-              >
-                <Option value="equals">等于</Option>
-                <Option value="not_equals">不等于</Option>
-                <Option value="contains">包含</Option>
-                <Option value="not_contains">不包含</Option>
-              </Select>
-            </Form.Item>
-            <Form.Item style={{ flex: 1 }}>
-              <Input 
-                placeholder="值" 
-                value={currentFilterValue}
-                onChange={(e) => setCurrentFilterValue(e.target.value)}
-              />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" onClick={() => {
-                if (currentField && currentFilterValue) {
-                  setFilters({
-                    ...filters,
-                    [currentField.name]: {
-                      condition: currentFilterCondition,
-                      value: currentFilterValue
-                    }
-                  })
-                  setCurrentFilterValue('')
-                  setCurrentField(null)
-                }
-              }}>
-                添加
-              </Button>
-            </Form.Item>
-          </div>
-        </Form>
-      </Modal>
+      <FilterModalComponent
+        visible={filterVisible}
+        fields={fields}
+        filters={filters}
+        currentField={currentField}
+        currentCondition={currentFilterCondition}
+        currentValue={currentFilterValue}
+        onFiltersChange={setFilters}
+        onCurrentFieldChange={setCurrentField}
+        onCurrentConditionChange={setCurrentFilterCondition}
+        onCurrentValueChange={setCurrentFilterValue}
+        onClose={() => setFilterVisible(false)}
+      />
 
       {/* 排序Modal */}
-      <Modal
-        title="排序"
-        open={sortVisible}
-        onCancel={() => setSortVisible(false)}
-        onOk={() => {
-          setSortVisible(false)
-          message.success('排序已应用')
-        }}
-        width={500}
-      >
-        <div style={{ marginBottom: 16 }}>
-          {sorts.map((sort, index) => {
-            const field = fields.find(f => f.name === sort.field)
-            return (
-              <div key={sort.field} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: '#fafafa', borderRadius: 4 }}>
-                <span style={{ color: '#999' }}>{index + 1}.</span>
-                <span style={{ fontWeight: 500, flex: 1 }}>{field?.display_name || sort.field}</span>
-                <Tag color={sort.order === 'asc' ? 'green' : 'orange'}>
-                  {sort.order === 'asc' ? '升序' : '降序'}
-                </Tag>
-                <Button type="text" size="small" onClick={() => {
-                  const newSorts = [...sorts]
-                  newSorts[index] = { ...newSorts[index], order: newSorts[index].order === 'asc' ? 'desc' : 'asc' }
-                  setSorts(newSorts)
-                }}>
-                  {sort.order === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
-                </Button>
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => {
-                  setSorts(sorts.filter((_, i) => i !== index))
-                }} />
-              </div>
-            )
-          })}
-        </div>
-        <Form layout="vertical">
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Form.Item style={{ flex: 1 }}>
-              <Select 
-                placeholder="选择字段"
-                value={currentField?.name}
-                onChange={(value) => setCurrentField(fields.find(f => f.name === value) || null)}
-              >
-                {fields.map(field => (
-                  <Option key={field.id} value={field.name}>{field.display_name}</Option>
-                ))}
-              </Select>
-            </Form.Item>
-            <Form.Item style={{ width: 100 }}>
-              <Select 
-                placeholder="排序"
-                value={currentSortOrder}
-                onChange={(value) => setCurrentSortOrder(value)}
-              >
-                <Option value="asc">升序</Option>
-                <Option value="desc">降序</Option>
-              </Select>
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" onClick={() => {
-                if (currentField) {
-                  const existingSortIndex = sorts.findIndex(s => s.field === currentField.name)
-                  const newSorts = [...sorts]
-                  if (existingSortIndex >= 0) {
-                    newSorts[existingSortIndex] = { field: currentField.name, order: currentSortOrder }
-                  } else {
-                    newSorts.push({ field: currentField.name, order: currentSortOrder })
-                  }
-                  setSorts(newSorts)
-                  setCurrentField(null)
-                }
-              }}>
-                添加
-              </Button>
-            </Form.Item>
-          </div>
-        </Form>
-      </Modal>
+      <SortModalComponent
+        visible={sortVisible}
+        fields={fields}
+        sorts={sorts}
+        currentField={currentField}
+        currentOrder={currentSortOrder}
+        onSortsChange={setSorts}
+        onCurrentFieldChange={setCurrentField}
+        onCurrentOrderChange={setCurrentSortOrder}
+        onClose={() => setSortVisible(false)}
+      />
 
-      {/* 编辑字段Drawer */}
-      <Drawer
-        title="编辑字段"
-        placement="right"
-        width={400}
+      {/* 添加字段Modal */}
+      <FieldModal
+        model={model}
+        field={null}
+        visible={addFieldPopoverVisible}
+        onClose={() => setAddFieldPopoverVisible(false)}
+        onSuccess={() => {
+          fetchModel()
+          fetchData()
+        }}
+        fields={fields}
+      />
+
+      {/* 编辑字段Modal */}
+      <FieldModal
+        model={model}
+        field={currentField}
+        visible={drawerVisible && currentField !== null}
         onClose={() => {
           setDrawerVisible(false)
           setCurrentField(null)
         }}
-        open={drawerVisible && currentField !== null}
-        footer={
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => {
-                setDrawerVisible(false)
-                setCurrentField(null)
-              }}>
-                取消
-              </Button>
-              <Button type="primary" onClick={() => fieldForm.submit()}>
-                保存
-              </Button>
-            </Space>
-          </div>
-        }
-      >
-        <Form
-          form={fieldForm}
-          layout="vertical"
-          onFinish={async (values) => {
-            if (!model || !currentField) return
-            try {
-              // 处理选项数据
-              let optionsStr = '[]'
-              if (values.options) {
-                const optionsArray = values.options.split('\n').filter((s: string) => s.trim())
-                optionsStr = JSON.stringify(optionsArray)
-              }
-
-              // 处理关联配置
-              let relationConfigStr = currentField.relation_config || '{}'
-              if (values.type === 'relation') {
-                const relationConfig = {
-                  target_model_id: values.relation_target_model,
-                  relation_type: values.relation_type || 'one_to_many',
-                  display_fields: values.relation_display_fields || [],
-                  allow_multiple: values.relation_type === 'one_to_many' || values.relation_type === 'many_to_many',
-                  allow_duplicate: values.relation_type === 'many_to_many',
-                  bidirectional: false
-                }
-                relationConfigStr = JSON.stringify(relationConfig)
-              }
-
-              await modelApi.updateField(model.id, currentField.id!, {
-                name: currentField.name,
-                display_name: values.display_name,
-                type: values.type,
-                required: false,
-                unique: false,
-                default_value: values.default_value,
-                options: optionsStr,
-                order: currentField.order,
-                validation: '{}',
-                relation_config: relationConfigStr,
-              })
-              message.success('字段更新成功')
-              setDrawerVisible(false)
-              setCurrentField(null)
-              fetchModel()
-            } catch (error: any) {
-              message.error(error.response?.data?.error || '更新失败')
-            }
-          }}
-        >
-          <Form.Item
-            label="字段名称"
-            name="display_name"
-            rules={[{ required: true, message: '请输入字段名称' }]}
-          >
-            <Input placeholder="输入字段显示名称" />
-          </Form.Item>
-
-          <Form.Item
-            label="字段类型"
-            name="type"
-            rules={[{ required: true, message: '请选择字段类型' }]}
-          >
-            <Select onChange={(value) => {
-              // 触发表单更新以显示/隐藏选项输入框
-              fieldForm.setFieldsValue({ type: value })
-            }}>
-              <Option value="text">单行文本</Option>
-              <Option value="email">邮箱</Option>
-              <Option value="url">链接</Option>
-              <Option value="number">数字</Option>
-              <Option value="select">单选</Option>
-              <Option value="multi_select">多选</Option>
-              <Option value="boolean">复选框</Option>
-              <Option value="date">日期</Option>
-              <Option value="relation">关联</Option>
-              <Option value="user">用户</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
-          >
-            {({ getFieldValue }) => {
-              const type = getFieldValue('type')
-              if (type === 'select' || type === 'multi_select') {
-                return (
-                  <Form.Item
-                    label="选项(每行一个)"
-                    name="options"
-                  >
-                    <Input.TextArea 
-                      rows={4} 
-                      placeholder="选项1&#10;选项2&#10;选项3"
-                    />
-                  </Form.Item>
-                )
-              }
-              if (type === 'relation') {
-                return (
-                  <>
-                    <Form.Item
-                      label="关联表"
-                      name="relation_target_model"
-                    >
-                      <Select placeholder="选择要关联的表" onChange={(value) => {
-                        fieldForm.setFieldsValue({ relation_display_fields: [] })
-                      }}>
-                        {allModels.map((m: Model) => (
-                          <Option key={m.id} value={m.id}>{m.display_name}</Option>
-                        ))}
-                      </Select>
-                    </Form.Item>
-                    <Form.Item
-                      label="关联类型"
-                      name="relation_type"
-                    >
-                      <Select>
-                        <Option value="one_to_one">一对一</Option>
-                        <Option value="one_to_many">一对多</Option>
-                        <Option value="many_to_many">多对多</Option>
-                      </Select>
-                    </Form.Item>
-                    <Form.Item
-                      noStyle
-                      shouldUpdate={(prevValues, currentValues) => prevValues.relation_target_model !== currentValues.relation_target_model}
-                    >
-                      {({ getFieldValue }) => {
-                        const targetModelId = getFieldValue('relation_target_model')
-                        const targetModel = allModels.find((m: Model) => m.id === targetModelId)
-                        const targetFields = targetModel?.fields?.filter(f => !f.deleted) || []
-                        return (
-                          <Form.Item
-                            label="显示字段"
-                            name="relation_display_fields"
-                            tooltip="选择关联记录时显示哪些字段"
-                          >
-                            <Select mode="multiple" placeholder="选择要显示的字段" allowClear>
-                              {targetFields.map(f => (
-                                <Option key={f.id} value={f.name}>{f.display_name}</Option>
-                              ))}
-                            </Select>
-                          </Form.Item>
-                        )
-                      }}
-                    </Form.Item>
-                  </>
-                )
-              }
-              return null
-            }}
-          </Form.Item>
-
-          <Form.Item
-            label="默认值"
-            name="default_value"
-          >
-            <Input placeholder="输入默认值" />
-          </Form.Item>
-        </Form>
-      </Drawer>
+        onSuccess={fetchModel}
+      />
 
       {/* 关联字段选择Modal */}
-      <Modal
-        title={`选择${currentRelationField?.display_name || '关联记录'}`}
-        open={relationModalVisible}
-        onCancel={() => {
+      <RelationSelectModal
+        visible={relationModalVisible}
+        field={currentRelationField}
+        row={currentRelationRow}
+        selectedIds={selectedRelationIds}
+        relationData={relationData}
+        relationDataLoading={relationDataLoading}
+        relationDataTotal={relationDataTotal}
+        allModels={allModels}
+        onSelectIds={setSelectedRelationIds}
+        onClose={() => {
           setRelationModalVisible(false)
           setCurrentRelationField(null)
           setCurrentRelationRow(null)
           setSelectedRelationIds([])
         }}
-        onOk={() => {
+        onConfirm={(value) => {
           if (currentRelationField && currentRelationRow) {
-            const saveValue = selectedRelationIds.join(',')
-            handleUpdateCell(currentRelationRow.id, currentRelationField.name, saveValue)
+            handleUpdateCell(currentRelationRow.id, currentRelationField.name, value)
           }
-          setRelationModalVisible(false)
-          setCurrentRelationField(null)
-          setCurrentRelationRow(null)
-          setSelectedRelationIds([])
         }}
-        width={800}
-      >
-        <div>
-          <Input.Search
-            placeholder="搜索记录..."
-            style={{ marginBottom: 16 }}
-            onChange={(e) => {
-              // 搜索功能可以后续实现
-            }}
-          />
-          <div 
-            style={{ maxHeight: 400, overflow: 'auto' }}
-            onScroll={(e) => {
-              const target = e.target as HTMLDivElement
-              if (target.scrollHeight - target.scrollTop - target.clientHeight < 50) {
-                // 滚动到底部时加载更多
-                if (currentRelationField && !relationDataLoading[currentRelationField.name]) {
-                  loadMoreRelationData(currentRelationField)
-                }
-              }
-            }}
-          >
-            {(() => {
-              if (!currentRelationField) return null
-              const records = relationData[currentRelationField.name] || []
-              const config = JSON.parse(currentRelationField.relation_config || '{}')
-              const allowMultiple = config.allow_multiple
-              const isLoading = relationDataLoading[currentRelationField.name]
-              const total = relationDataTotal[currentRelationField.name] || 0
-              
-              // 获取关联表的字段定义
-              const targetModelId = config.target_model_id
-              const targetModel = allModels.find((m: Model) => m.id === targetModelId)
-              const targetFields = targetModel?.fields || []
-              
-              // 优先使用配置的显示字段，否则显示所有非系统字段
-              const configuredDisplayFields = config.display_fields || []
-              const displayFields = configuredDisplayFields.length > 0
-                ? targetFields.filter(f => configuredDisplayFields.includes(f.name))
-                : targetFields.filter(f => 
-                    f.name !== 'id' && 
-                    f.name !== 'created_at' && 
-                    f.name !== 'updated_at'
-                  )
-              
-              return (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
-                        <th style={{ width: 40, padding: '12px 8px', textAlign: 'center', position: 'sticky', left: 0, background: '#fafafa', zIndex: 1 }}>
-                          {allowMultiple ? '多选' : '单选'}
-                        </th>
-                        {displayFields.map(field => (
-                          <th key={field.id} style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, minWidth: 120, whiteSpace: 'nowrap' }}>
-                            {field.display_name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.map((record: any) => {
-                        const isSelected = selectedRelationIds.includes(record.id)
-                        return (
-                          <tr
-                            key={record.id}
-                            style={{
-                              cursor: 'pointer',
-                              background: isSelected ? '#e6f7ff' : '#fff',
-                              transition: 'background 0.2s',
-                            }}
-                            onClick={() => {
-                              if (allowMultiple) {
-                                if (isSelected) {
-                                  setSelectedRelationIds(prev => prev.filter(id => id !== record.id))
-                                } else {
-                                  setSelectedRelationIds(prev => [...prev, record.id])
-                                }
-                              } else {
-                                setSelectedRelationIds([record.id])
-                              }
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isSelected) {
-                                e.currentTarget.style.background = '#f5f5f5'
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!isSelected) {
-                                e.currentTarget.style.background = '#fff'
-                              }
-                            }}
-                          >
-                            <td style={{ padding: '12px 8px', textAlign: 'center', borderBottom: '1px solid #f0f0f0', position: 'sticky', left: 0, background: isSelected ? '#e6f7ff' : '#fff', zIndex: 1 }}>
-                              {allowMultiple ? (
-                                <Checkbox checked={isSelected} />
-                              ) : (
-                                <div style={{
-                                  width: 16,
-                                  height: 16,
-                                  borderRadius: '50%',
-                                  border: '2px solid',
-                                  borderColor: isSelected ? '#1890ff' : '#d9d9d9',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}>
-                                  {isSelected && (
-                                    <div style={{
-                                      width: 8,
-                                      height: 8,
-                                      borderRadius: '50%',
-                                      background: '#1890ff',
-                                    }} />
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                            {displayFields.map(field => (
-                              <td key={field.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', whiteSpace: 'nowrap' }}>
-                                {record[field.name] || '-'}
-                              </td>
-                            ))}
-                          </tr>
-                        )
-                      })}
-                      {isLoading && (
-                        <tr>
-                          <td colSpan={displayFields.length + 1} style={{ textAlign: 'center', padding: 16 }}>
-                            <Spin size="small" />
-                          </td>
-                        </tr>
-                      )}
-                      {!isLoading && records.length === 0 && (
-                        <tr>
-                          <td colSpan={displayFields.length + 1} style={{ textAlign: 'center', padding: 16, color: '#999' }}>
-                            暂无数据
-                          </td>
-                        </tr>
-                      )}
-                      {!isLoading && records.length > 0 && records.length < total && (
-                        <tr>
-                          <td colSpan={displayFields.length + 1} style={{ textAlign: 'center', padding: 8, color: '#999' }}>
-                            已加载 {records.length} / {total} 条
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            })()}
-          </div>
-          {selectedRelationIds.length > 0 && (
-            <div style={{ marginTop: 16, padding: '8px 12px', background: '#f5f5f5', borderRadius: 4 }}>
-              已选择 {selectedRelationIds.length} 条记录
-            </div>
-          )}
-        </div>
-      </Modal>
+        onLoadMore={loadMoreRelationData}
+      />
 
       {/* 字段配置Drawer */}
-      <Drawer
-        title="字段配置"
-        placement="right"
-        width={300}
+      <FieldConfigDrawer
+        visible={fieldConfigVisible}
         onClose={() => setFieldConfigVisible(false)}
-        open={fieldConfigVisible}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Button 
-            type="primary" 
-            block
-            onClick={() => setVisibleFields(fields.map(f => f.id!))}
-          >
-            显示全部
-          </Button>
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <Button 
-            block
-            onClick={() => setVisibleFields([])}
-          >
-            隐藏全部
-          </Button>
-        </div>
-        <div style={{ borderTop: '1px solid #e8e8e8', paddingTop: 16 }}>
-          {fields.map((field, index) => (
-            <div 
-              key={field.id}
-              style={{
-                padding: '8px 0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'move',
-              }}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, alignItems: 'center' }}>
-                <Button
-                  type="text"
-                  size="small"
-                  disabled={index === 0}
-                  onClick={() => handleMoveField(index, -1)}
-                  style={{ 
-                    padding: 0, 
-                    minWidth: 24, 
-                    height: 20, 
-                    lineHeight: '20px', 
-                    fontSize: 16,
-                    color: index === 0 ? '#d9d9d9' : '#666',
-                  }}
-                >
-                  ↑
-                </Button>
-                <Button
-                  type="text"
-                  size="small"
-                  disabled={index === fields.length - 1}
-                  onClick={() => handleMoveField(index, 1)}
-                  style={{ 
-                    padding: 0, 
-                    minWidth: 24, 
-                    height: 20, 
-                    lineHeight: '20px', 
-                    fontSize: 16,
-                    color: index === fields.length - 1 ? '#d9d9d9' : '#666',
-                  }}
-                >
-                  ↓
-                </Button>
-              </div>
-              <Checkbox
-                checked={visibleFields.includes(field.id!)}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setVisibleFields([...visibleFields, field.id!])
-                  } else {
-                    setVisibleFields(visibleFields.filter(id => id !== field.id))
-                  }
-                }}
-              />
-              <span style={{ 
-                width: 24, 
-                height: 24, 
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: `${getFieldColor(field.type)}20`,
-                color: getFieldColor(field.type),
-                borderRadius: 4,
-                fontSize: 12,
-              }}>
-                {getFieldIcon(field.type)}
-              </span>
-              <span>{field.display_name}</span>
-            </div>
-          ))}
-        </div>
-      </Drawer>
+        fields={fields}
+        visibleFields={visibleFields}
+        onVisibleFieldsChange={setVisibleFields}
+        onMoveField={handleMoveField}
+      />
 
       {/* 记录详情 */}
       <RecordDetail

@@ -108,7 +108,10 @@ func (h *DataHandler) UpdateData(c *gin.Context) {
 		return
 	}
 
-	if err := h.dataService.UpdateData(modelName, id, data); err != nil {
+	// 获取当前用户ID
+	userID, _ := c.Get("userID")
+
+	if err := h.dataService.UpdateData(modelName, id, data, userID.(string)); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -151,7 +154,9 @@ func (h *DataHandler) BatchOperation(c *gin.Context) {
 		})
 
 	case "update":
-		if err := h.dataService.BatchUpdate(modelName, req.Updates); err != nil {
+		// 获取当前用户ID
+		userID, _ := c.Get("userID")
+		if err := h.dataService.BatchUpdate(modelName, req.Updates, userID.(string)); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}

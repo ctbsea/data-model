@@ -59,7 +59,7 @@ const Layout = () => {
     fetchModels()
     fetchCurrentUser()
     fetchPanels()
-    fetchUnreadCount()
+    // 不在 Layout 中自动获取未读邮件数量,由具体页面根据需要调用
   }, [])
 
   const fetchModels = async () => {

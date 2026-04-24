@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -60,6 +61,25 @@ func main() {
 	// 注册健康检查接口
 	healthHandler := handlers.NewHealthHandler()
 	router.GET("/health", healthHandler.Check)
+
+	// 文件上传目录
+	uploadDir := "./uploads"
+	os.MkdirAll(uploadDir, 0755)
+	router.Static("/uploads", uploadDir)
+	router.POST("/api/upload", func(c *gin.Context) {
+		file, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(400, gin.H{"error": "No file uploaded"})
+			return
+		}
+		ext := filepath.Ext(file.Filename)
+		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+		if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, filename)); err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(200, gin.H{"url": "/uploads/" + filename, "filename": file.Filename})
+	})
 
 	// 修复字段默认值
 	router.POST("/api/fix-fields", func(c *gin.Context) {
@@ -119,6 +139,7 @@ func main() {
 	pageHandler := handlers.NewPageHandler()
 	workflowHandler := handlers.NewWorkflowHandler()
 	commentHandler := handlers.NewCommentHandler(utils.DB)
+	historyHandler := handlers.NewHistoryHandler(utils.DB)
 	viewConfigHandler := handlers.NewViewConfigHandler(utils.DB)
 
 	// API 路由组
@@ -246,6 +267,12 @@ func main() {
 				comments.GET("/counts", commentHandler.GetCommentCounts)
 				comments.POST("", commentHandler.CreateComment)
 				comments.DELETE("/:id", commentHandler.DeleteComment)
+			}
+
+			// 历史记录管理
+			history := protected.Group("/history")
+			{
+				history.GET("/:model_name/:record_id", historyHandler.GetHistory)
 			}
 
 			// 视图配置

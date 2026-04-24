@@ -1,6 +1,6 @@
 import React, { useRef } from 'react'
-import { Spin, Button, Tag, Dropdown, Select, Input, DatePicker, Badge, Modal } from 'antd'
-import { DeleteOutlined, MoreOutlined, MailOutlined, PlusOutlined } from '@ant-design/icons'
+import { Spin, Button, Tag, Dropdown, Select, Input, DatePicker, Badge, Modal, Upload, Image } from 'antd'
+import { DeleteOutlined, MoreOutlined, MailOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { Field, Model } from '../../api/model'
 import { getFieldIcon, getFieldColor, TAG_COLORS } from './utils'
@@ -99,19 +99,74 @@ export const TableView: React.FC<TableViewProps> = ({
 
     if (isEditing) {
       if (field.type === 'select' || field.type === 'multi_select') {
-        const options = JSON.parse(field.options || '[]')
+        let options: any[] = []
+        try {
+          let parsed = JSON.parse(field.options || '[]')
+          // 处理双重编码: ["[{...}]"] -> [{...}]
+          if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
+            parsed = JSON.parse(parsed[0])
+          }
+          options = parsed
+        } catch (e) {
+          console.error('Failed to parse options:', field.options)
+          options = []
+        }
+        // 新格式: [{label, color}]
+        const hasColorConfig = Array.isArray(options) && options.length > 0 && options[0]?.label
+        
+        // 处理当前值
+        let currentValue = editValue
+        if (field.type === 'multi_select') {
+          if (typeof editValue === 'string' && editValue) {
+            currentValue = editValue.split(',').filter((v: string) => v.trim())
+          } else if (Array.isArray(editValue)) {
+            currentValue = editValue
+          } else {
+            currentValue = []
+          }
+        }
+        
         return (
           <Select
             autoFocus
-            open
+            defaultOpen
             mode={field.type === 'multi_select' ? 'multiple' : undefined}
-            value={editValue}
-            onChange={onEditChange}
-            onBlur={() => onEditBlur(row.id, field.name, editValue)}
+            value={currentValue}
+            onChange={(value) => {
+              if (field.type === 'multi_select') {
+                const newValue = Array.isArray(value) ? value : [value]
+                onEditChange(newValue.join(','))
+                // 多选每次变化都保存
+                onEditBlur(row.id, field.name, newValue.join(','))
+              } else {
+                onEditChange(value)
+                onEditBlur(row.id, field.name, value)
+              }
+            }}
+            onBlur={() => {
+              if (field.type === 'multi_select') {
+                // 多选失焦时保存
+                const saveValue = Array.isArray(editValue) ? editValue.join(',') : String(editValue || '')
+                onEditBlur(row.id, field.name, saveValue)
+              }
+            }}
             size="small"
             style={{ width: '100%' }}
-            options={options.map((opt: string) => ({ label: opt, value: opt }))}
-          />
+          >
+            {hasColorConfig ? (
+              options.map((opt: any) => (
+                <Option key={opt.label} value={opt.label}>
+                  <Tag color={opt.color} style={{ margin: 0 }}>{opt.label}</Tag>
+                </Option>
+              ))
+            ) : (
+              options.map((opt: string, index: number) => (
+                <Option key={opt} value={opt}>
+                  <Tag color={TAG_COLORS[index % TAG_COLORS.length]} style={{ margin: 0 }}>{opt}</Tag>
+                </Option>
+              ))
+            )}
+          </Select>
         )
       }
       if (field.type === 'user') {
@@ -154,6 +209,38 @@ export const TableView: React.FC<TableViewProps> = ({
           />
         )
       }
+      if (field.type === 'datetime') {
+        return (
+          <DatePicker
+            autoFocus
+            open
+            showTime
+            value={editValue ? dayjs(editValue) : null}
+            onChange={(date) => {
+              const value = date ? date.format('YYYY-MM-DD HH:mm:ss') : ''
+              onEditChange(value)
+              onEditBlur(row.id, field.name, value)
+            }}
+            size="small"
+            style={{ width: '100%' }}
+          />
+        )
+      }
+      if (field.type === 'file' || field.type === 'image') {
+        return (
+          <Upload
+            action="/api/upload"
+            name="file"
+            showUploadList={false}
+            onSuccess={(response: any) => {
+              onEditChange(response.url)
+              onEditBlur(row.id, field.name, response.url)
+            }}
+          >
+            <Button size="small" icon={<UploadOutlined />}>上传</Button>
+          </Upload>
+        )
+      }
       return (
         <Input
           autoFocus
@@ -170,21 +257,48 @@ export const TableView: React.FC<TableViewProps> = ({
     // 显示值
     if (field.type === 'select' || field.type === 'multi_select') {
       try {
-        const options = JSON.parse(field.options || '[]')
+        let parsed = JSON.parse(field.options || '[]')
+        // 处理双重编码: ["[{...}]"] -> [{...}]
+        if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
+          parsed = JSON.parse(parsed[0])
+        }
+        const options = parsed
+        // 新格式: [{label, color}]
+        const hasColorConfig = Array.isArray(options) && options.length > 0 && options[0]?.label
+        
         if (field.type === 'multi_select' && value) {
           const values = Array.isArray(value) ? value : String(value).split(',')
           return (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {values.map((v: string, i: number) => (
-                <Tag key={i} color={TAG_COLORS[i % TAG_COLORS.length]} style={{ margin: 0 }}>{v.trim()}</Tag>
-              ))}
+              {values.map((v: string, i: number) => {
+                const trimmed = v.trim()
+                if (hasColorConfig) {
+                  const opt = options.find((o: any) => o.label === trimmed)
+                  return (
+                    <Tag key={i} color={opt?.color || TAG_COLORS[i % TAG_COLORS.length]} style={{ margin: 0 }}>
+                      {trimmed}
+                    </Tag>
+                  )
+                }
+                return (
+                  <Tag key={i} color={TAG_COLORS[i % TAG_COLORS.length]} style={{ margin: 0 }}>
+                    {trimmed}
+                  </Tag>
+                )
+              })}
             </div>
           )
         }
         if (value) {
+          if (hasColorConfig) {
+            const opt = options.find((o: any) => o.label === value)
+            return <Tag color={opt?.color || TAG_COLORS[0]}>{value}</Tag>
+          }
           return <Tag color={TAG_COLORS[0]}>{value}</Tag>
         }
-      } catch {}
+      } catch (e) {
+        console.error('Failed to parse options:', field.options)
+      }
     }
 
     if (field.type === 'user' && value) {
@@ -195,6 +309,17 @@ export const TableView: React.FC<TableViewProps> = ({
     // 日期字段显示
     if (field.type === 'date' && value) {
       return <span>{dayjs(value).format('YYYY-MM-DD')}</span>
+    }
+    if (field.type === 'datetime' && value) {
+      return <span>{dayjs(value).format('YYYY-MM-DD HH:mm:ss')}</span>
+    }
+
+    // 文件/图片字段显示
+    if (field.type === 'image' && value) {
+      return <Image src={value} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 4 }} />
+    }
+    if (field.type === 'file' && value) {
+      return <a href={value} target="_blank" rel="noreferrer">{value.split('/').pop()}</a>
     }
 
     // 关联字段显示

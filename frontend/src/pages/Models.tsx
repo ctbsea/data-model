@@ -5,7 +5,6 @@ import {
   Spin, 
   Button, 
   Space, 
-  Drawer, 
   Form, 
   Input, 
   Select, 
@@ -27,6 +26,7 @@ import {
   SettingOutlined
 } from '@ant-design/icons'
 import { modelApi, Model, Field } from '../api/model'
+import { FieldModal } from './data/components/FieldModal'
 import type { MenuProps } from 'antd'
 
 const { Option } = Select
@@ -482,133 +482,20 @@ const Models = () => {
         </div>
       </div>
 
-      {/* 添加字段抽屉 */}
-      <Drawer
-        title={editingField ? '编辑字段' : '添加字段'}
-        placement="right"
-        width={400}
+      {/* 添加/编辑字段Modal */}
+      <FieldModal
+        model={model}
+        field={editingField}
+        visible={drawerVisible}
         onClose={() => {
           setDrawerVisible(false)
-          fieldForm.resetFields()
           setEditingField(null)
         }}
-        open={drawerVisible}
-        footer={
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => {
-                setDrawerVisible(false)
-                fieldForm.resetFields()
-                setEditingField(null)
-              }}>
-                取消
-              </Button>
-              <Button type="primary" onClick={() => fieldForm.submit()}>
-                保存
-              </Button>
-            </Space>
-          </div>
-        }
-      >
-        <Form
-          form={fieldForm}
-          layout="vertical"
-          onFinish={handleAddField}
-        >
-          <Form.Item
-            label="字段名称"
-            name="display_name"
-            rules={[{ required: true, message: '请输入字段名称' }]}
-          >
-            <Input placeholder="输入字段显示名称" autoFocus />
-          </Form.Item>
-
-          <Form.Item
-            label="字段类型"
-            name="type"
-            rules={[{ required: true, message: '请选择字段类型' }]}
-            initialValue="text"
-          >
-            <Select onChange={(value) => {
-              if (value === 'select' || value === 'multi_select') {
-                fieldForm.setFieldsValue({ showOptions: true })
-              } else {
-                fieldForm.setFieldsValue({ showOptions: false })
-              }
-            }}>
-              <Option value="text">单行文本</Option>
-              <Option value="email">邮箱</Option>
-              <Option value="url">链接</Option>
-              <Option value="number">数字</Option>
-              <Option value="select">单选</Option>
-              <Option value="multi_select">多选</Option>
-              <Option value="boolean">复选框</Option>
-              <Option value="date">日期</Option>
-              <Option value="relation">关联</Option>
-              <Option value="user">用户</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
-          >
-            {({ getFieldValue }) => {
-              const type = getFieldValue('type')
-              if (type === 'select' || type === 'multi_select') {
-                return (
-                  <Form.Item
-                    label="选项列表(每行一个)"
-                    name="options"
-                    rules={[{ required: true, message: '请输入选项' }]}
-                  >
-                    <Input.TextArea 
-                      rows={4} 
-                      placeholder="选项1&#10;选项2&#10;选项3"
-                    />
-                  </Form.Item>
-                )
-              }
-              if (type === 'relation') {
-                return (
-                  <>
-                    <Form.Item
-                      label="关联表"
-                      name="relation_target_model"
-                      rules={[{ required: true, message: '请选择关联表' }]}
-                    >
-                      <Select placeholder="选择要关联的表">
-                        {allModels.map((m: Model) => (
-                          <Option key={m.id} value={m.id}>{m.display_name}</Option>
-                        ))}
-                      </Select>
-                    </Form.Item>
-                    <Form.Item
-                      label="关联类型"
-                      name="relation_type"
-                      initialValue="one_to_many"
-                    >
-                      <Select>
-                        <Option value="one_to_one">一对一</Option>
-                        <Option value="one_to_many">一对多</Option>
-                        <Option value="many_to_many">多对多</Option>
-                      </Select>
-                    </Form.Item>
-                  </>
-                )
-              }
-              return null
-            }}
-          </Form.Item>
-
-          <Form.Item
-            label="默认值"
-            name="default_value"
-          >
-            <Input placeholder="输入默认值" />
-          </Form.Item>
-        </Form>
-      </Drawer>
+        onSuccess={() => {
+          fetchModel()
+        }}
+        fields={model?.fields || []}
+      />
     </div>
   )
 }

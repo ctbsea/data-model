@@ -12,11 +12,12 @@ import {
   Tag,
   Dropdown
 } from 'antd'
-import { 
-  PlusOutlined, 
+import {
+  PlusOutlined,
   DeleteOutlined,
   SettingOutlined,
-  TableOutlined
+  TableOutlined,
+  PlayCircleOutlined
 } from '@ant-design/icons'
 import { modelApi, Model } from '../api/model'
 import type { MenuProps } from 'antd'
@@ -72,6 +73,16 @@ const ModelList = () => {
     }
   }
 
+  const handleApplyModel = async (modelId: string) => {
+    try {
+      await modelApi.apply(modelId)
+      message.success('模型应用成功,数据表已创建')
+      fetchModels()
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '应用模型失败')
+    }
+  }
+
   const modelMenu = (model: Model): MenuProps => ({
     items: [
       {
@@ -81,9 +92,23 @@ const ModelList = () => {
         onClick: () => navigate(`/models/${model.id}`),
       },
       {
+        key: 'apply',
+        icon: <PlayCircleOutlined />,
+        label: '应用模型',
+        disabled: model.status === 'applied',
+        onClick: () => {
+          Modal.confirm({
+            title: '确认应用',
+            content: `确定要应用模型 "${model.display_name}" 吗?这将创建数据表。`,
+            onOk: () => handleApplyModel(model.id),
+          })
+        },
+      },
+      {
         key: 'data',
         icon: <TableOutlined />,
         label: '管理数据',
+        disabled: model.status !== 'applied',
         onClick: () => navigate(`/data/${model.name}`),
       },
       {
@@ -137,20 +162,36 @@ const ModelList = () => {
             hoverable
             style={{ borderRadius: 8 }}
             actions={[
-              <Button 
-                type="link" 
+              <Button
+                type="link"
                 icon={<SettingOutlined />}
                 onClick={() => navigate(`/models/${model.id}`)}
               >
                 字段配置
               </Button>,
-              <Button 
-                type="link" 
-                icon={<TableOutlined />}
-                onClick={() => navigate(`/data/${model.name}`)}
-              >
-                管理数据
-              </Button>,
+              model.status === 'applied' ? (
+                <Button
+                  type="link"
+                  icon={<TableOutlined />}
+                  onClick={() => navigate(`/data/${model.name}`)}
+                >
+                  管理数据
+                </Button>
+              ) : (
+                <Button
+                  type="link"
+                  icon={<PlayCircleOutlined />}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: '确认应用',
+                      content: `确定要应用模型 "${model.display_name}" 吗?这将创建数据表。`,
+                      onOk: () => handleApplyModel(model.id),
+                    })
+                  }}
+                >
+                  应用模型
+                </Button>
+              ),
             ]}
           >
             <Card.Meta

@@ -101,7 +101,7 @@ func (r *emailRepository) GetUnreadCount(userID string) (int64, error) {
 	if err := utils.DB.First(&user, "id = ?", userID).Error; err != nil {
 		return 0, err
 	}
-	if err := utils.DB.Model(&models.Email{}).Where("`to` = ? AND is_read = ?", user.EmailAddress, false).Count(&count).Error; err != nil {
+	if err := utils.DB.Model(&models.Email{}).Where("\"to\" = ? AND is_read = ?", user.EmailAddress, false).Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil

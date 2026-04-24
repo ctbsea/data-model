@@ -4,20 +4,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/dmdp/platform/internal/models"
 	"github.com/dmdp/platform/internal/repositories"
 	"github.com/dmdp/platform/internal/utils"
+	"github.com/google/uuid"
 )
 
 type DataService interface {
 	CreateData(modelName string, data map[string]interface{}) (string, error)
 	GetData(modelName, id string) (map[string]interface{}, error)
 	ListData(modelName string, req *ListDataRequest) (*ListDataResponse, error)
-	UpdateData(modelName, id string, data map[string]interface{}) error
+	UpdateData(modelName, id string, data map[string]interface{}, userID string) error
 	DeleteData(modelName, id string) error
 	BatchCreate(modelName string, dataList []map[string]interface{}) ([]string, error)
-	BatchUpdate(modelName string, updates []repositories.BatchUpdateItem) error
+	BatchUpdate(modelName string, updates []repositories.BatchUpdateItem, userID string) error
 	BatchDelete(modelName string, ids []string) error
 }
 
@@ -108,6 +111,14 @@ func (s *dataService) ListData(modelName string, req *ListDataRequest) (*ListDat
 		queryOptions.Sort = append(queryOptions.Sort, repositories.SortField{
 			Field: sort.Field,
 			Order: sort.Order,
+		})
+	}
+	
+	// 默认按 ID 降序排序
+	if len(queryOptions.Sort) == 0 {
+		queryOptions.Sort = append(queryOptions.Sort, repositories.SortField{
+			Field: "id",
+			Order: "desc",
 		})
 	}
 
@@ -289,7 +300,7 @@ func (s *dataService) attachRelationData(model *models.Model, dataList []map[str
 	return nil
 }
 
-func (s *dataService) UpdateData(modelName, id string, data map[string]interface{}) error {
+func (s *dataService) UpdateData(modelName, id string, data map[string]interface{}, userID string) error {
 	model, err := s.modelRepo.GetByName(modelName)
 	if err != nil {
 		return errors.New("model not found")
@@ -300,10 +311,24 @@ func (s *dataService) UpdateData(modelName, id string, data map[string]interface
 		return err
 	}
 
+	// 获取旧数据用于记录变更日志
+	utils.Logger.Info(fmt.Sprintf("Getting old data for change log: table=%s, id=%s", model.TableName, id))
+	oldData, err := s.dynamicRepo.GetByID(model.TableName, id)
+	if err != nil {
+		// 如果获取旧数据失败，记录错误并使用空map继续更新
+		utils.Logger.Error(fmt.Sprintf("Failed to get old data for change log: %v", err))
+		oldData = make(map[string]interface{})
+	} else {
+		utils.Logger.Info(fmt.Sprintf("Got old data for change log: %+v", oldData))
+	}
+
 	// 更新数据
 	if err := s.dynamicRepo.Update(model.TableName, id, data); err != nil {
 		return err
 	}
+
+	// 记录变更日志
+	s.recordChangeLogs(modelName, id, oldData, data, userID)
 
 	return nil
 }
@@ -342,7 +367,7 @@ func (s *dataService) BatchCreate(modelName string, dataList []map[string]interf
 	return ids, nil
 }
 
-func (s *dataService) BatchUpdate(modelName string, updates []repositories.BatchUpdateItem) error {
+func (s *dataService) BatchUpdate(modelName string, updates []repositories.BatchUpdateItem, userID string) error {
 	model, err := s.modelRepo.GetByName(modelName)
 	if err != nil {
 		return errors.New("model not found")
@@ -355,8 +380,26 @@ func (s *dataService) BatchUpdate(modelName string, updates []repositories.Batch
 		}
 	}
 
+	// 批量获取旧数据用于记录变更日志
+	oldDataMap := make(map[string]map[string]interface{})
+	for _, update := range updates {
+		if oldData, err := s.dynamicRepo.GetByID(model.TableName, update.ID); err == nil {
+			oldDataMap[update.ID] = oldData
+		} else {
+			// 如果获取失败，使用空map
+			oldDataMap[update.ID] = make(map[string]interface{})
+		}
+	}
+
 	if err := s.dynamicRepo.BatchUpdate(model.TableName, updates); err != nil {
 		return err
+	}
+
+	// 批量记录变更日志
+	for _, update := range updates {
+		if oldData, ok := oldDataMap[update.ID]; ok {
+			s.recordChangeLogs(modelName, update.ID, oldData, update.Data, userID)
+		}
 	}
 
 	return nil
@@ -385,6 +428,14 @@ func (s *dataService) validateData(model *models.Model, data map[string]interfac
 			if err := s.validateFieldType(field, value); err != nil {
 				return err
 			}
+			// 数字类型:字符串转数字
+			if field.Type == "number" {
+				if str, ok := value.(string); ok {
+					if num, err := strconv.ParseFloat(str, 64); err == nil {
+						data[field.Name] = num
+					}
+				}
+			}
 		}
 	}
 
@@ -398,9 +449,20 @@ func (s *dataService) validateFieldType(field *models.Field, value interface{}) 
 			return fmt.Errorf("field %s must be string", field.Name)
 		}
 	case "number":
-		if !isNumber(value) {
-			return fmt.Errorf("field %s must be number", field.Name)
+		// 允许字符串数字和空值
+		if isNumber(value) {
+			return nil
 		}
+		if str, ok := value.(string); ok {
+			if str == "" {
+				return nil // 允许空字符串
+			}
+			if _, err := strconv.ParseFloat(str, 64); err != nil {
+				return fmt.Errorf("field %s must be number", field.Name)
+			}
+			return nil
+		}
+		return fmt.Errorf("field %s must be number", field.Name)
 	case "bool":
 		if _, ok := value.(bool); !ok {
 			return fmt.Errorf("field %s must be boolean", field.Name)
@@ -446,4 +508,97 @@ func isNumber(value interface{}) bool {
 	default:
 		return false
 	}
+}
+
+// recordChangeLogs 记录变更日志
+func (s *dataService) recordChangeLogs(modelName, recordID string, oldData, newData map[string]interface{}, userID string) {
+	// 忽略系统字段
+	systemFields := map[string]bool{
+		"id":         true,
+		"created_at": true,
+		"updated_at": true,
+		"created_by": true,
+		"updated_by": true,
+	}
+
+	now := time.Now()
+	var changeLogs []models.ChangeLog
+
+	utils.Logger.Info(fmt.Sprintf("Recording change logs for model=%s, record=%s, oldData=%v, newData=%v", modelName, recordID, oldData, newData))
+
+	for field, newValue := range newData {
+		// 跳过系统字段
+		if systemFields[field] {
+			continue
+		}
+
+		oldValue := oldData[field]
+
+		// 比较新旧值，只有变化才记录
+		if !isEqual(oldValue, newValue) {
+			utils.Logger.Info(fmt.Sprintf("Field %s changed: oldValue=%v, newValue=%v", field, oldValue, newValue))
+			
+			// 将值转换为 JSON 字符串格式存储
+			var oldValueStr, newValueStr string
+			if oldValue != nil {
+				oldValueJSON, _ := json.Marshal(oldValue)
+				oldValueStr = string(oldValueJSON)
+			} else {
+				oldValueStr = "null"
+			}
+			if newValue != nil {
+				newValueJSON, _ := json.Marshal(newValue)
+				newValueStr = string(newValueJSON)
+			} else {
+				newValueStr = "null"
+			}
+			
+			changeLogs = append(changeLogs, models.ChangeLog{
+				ID:        uuid.New().String(),
+				ModelName: modelName,
+				RowID:     recordID,
+				FieldName: field,
+				OldValue:  oldValueStr,
+				NewValue:  newValueStr,
+				ChangedBy: userID,
+				ChangedAt: now,
+				Operation: "update",
+			})
+		}
+	}
+
+	// 批量保存变更日志
+	if len(changeLogs) > 0 {
+		utils.Logger.Info(fmt.Sprintf("Saving %d change logs", len(changeLogs)))
+		if err := utils.DB.Create(&changeLogs).Error; err != nil {
+			utils.Logger.Error(fmt.Sprintf("Failed to save change logs: %v", err))
+		} else {
+			utils.Logger.Info(fmt.Sprintf("Successfully saved %d change logs", len(changeLogs)))
+		}
+	} else {
+		utils.Logger.Info("No changes detected")
+	}
+}
+
+// isEqual 比较两个值是否相等
+func isEqual(a, b interface{}) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+
+	// 尝试转换为 JSON 进行比较
+	aJSON, aErr := json.Marshal(a)
+	bJSON, bErr := json.Marshal(b)
+	if aErr == nil && bErr == nil {
+		result := string(aJSON) == string(bJSON)
+		if !result {
+			utils.Logger.Info(fmt.Sprintf("Values different: a=%s, b=%s", string(aJSON), string(bJSON)))
+		}
+		return result
+	}
+
+	return a == b
 }

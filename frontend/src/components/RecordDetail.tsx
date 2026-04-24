@@ -20,12 +20,14 @@ import {
   UserOutlined,
   LeftOutlined,
   RightOutlined,
-  MessageOutlined
+  MessageOutlined,
+  HistoryOutlined
 } from '@ant-design/icons'
 import { Field, Model, modelApi } from '../api/model'
 import { userApi } from '../api/user'
 import { dataApi } from '../api/data'
 import { commentApi, Comment as CommentType } from '../api/comment'
+import HistoryDrawer from './HistoryDrawer'
 import dayjs from 'dayjs'
 
 const { Option } = Select
@@ -56,6 +58,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
   const [relationData, setRelationData] = useState<Record<string, any[]>>({})
   const [allModels, setAllModels] = useState<Model[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const [historyVisible, setHistoryVisible] = useState(false)
 
   // 加载评论
   const loadComments = async () => {
@@ -134,13 +137,20 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       setSaving(true)
       const values = await form.validateFields()
       
-      // 处理日期字段
+      // 处理字段类型转换
       const submitData: any = {}
       Object.keys(values).forEach(key => {
-        if (dayjs.isDayjs(values[key])) {
-          submitData[key] = values[key].format('YYYY-MM-DD')
+        const field = fields.find(f => f.name === key)
+        const value = values[key]
+        
+        if (dayjs.isDayjs(value)) {
+          // 日期字段
+          submitData[key] = value.format('YYYY-MM-DD')
+        } else if (field?.type === 'number' && value !== undefined && value !== null && value !== '') {
+          // 数字字段：转换为数字类型
+          submitData[key] = Number(value)
         } else {
-          submitData[key] = values[key]
+          submitData[key] = value
         }
       })
       
@@ -343,6 +353,11 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
               <Button type="text" icon={<LeftOutlined />} onClick={onClose} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Button 
+                type="text" 
+                icon={<HistoryOutlined />} 
+                onClick={() => setHistoryVisible(true)}
+              />
               <div style={{ position: 'relative' }}>
                 <Button 
                   type="text" 
@@ -490,6 +505,14 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
           )}
         </div>
       </div>
+      
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        modelName={model?.name || ''}
+        recordId={record?.id || ''}
+        onClose={() => setHistoryVisible(false)}
+      />
     </Drawer>
   )
 }

@@ -21,15 +21,15 @@ func NewSchemaManager() SchemaManager {
 }
 
 func (s *schemaManager) CreateTable(model *models.Model) error {
-	// 构建创建表的SQL
-	sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%s` (\n", model.TableName)
-	sql += "  `id` VARCHAR(64) PRIMARY KEY,\n"
+	// 构建创建表的SQL (PostgreSQL 语法)
+	sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", model.TableName)
+	sql += "  id VARCHAR(64) PRIMARY KEY,\n"
 
 	// 添加字段
 	for _, field := range model.Fields {
 		fieldType := MapFieldTypeToSQL(field.Type)
-		sql += fmt.Sprintf("  `%s` %s", field.Name, fieldType)
-		
+		sql += fmt.Sprintf("  %s %s", field.Name, fieldType)
+
 		if field.Required {
 			sql += " NOT NULL"
 		}
@@ -40,11 +40,11 @@ func (s *schemaManager) CreateTable(model *models.Model) error {
 	}
 
 	// 添加标准字段
-	sql += "  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
-	sql += "  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n"
-	sql += "  `created_by` VARCHAR(64),\n"
-	sql += "  `updated_by` VARCHAR(64)\n"
-	sql += ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+	sql += "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+	sql += "  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n"
+	sql += "  created_by VARCHAR(64),\n"
+	sql += "  updated_by VARCHAR(64)\n"
+	sql += ");"
 
 	// 执行SQL
 	if err := utils.DB.Exec(sql).Error; err != nil {
@@ -55,14 +55,14 @@ func (s *schemaManager) CreateTable(model *models.Model) error {
 	for _, field := range model.Fields {
 		if field.Unique {
 			// 唯一索引
-			indexSQL := fmt.Sprintf("CREATE UNIQUE INDEX idx_%s_%s ON `%s` (`%s`)", 
+			indexSQL := fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s)",
 				model.TableName, field.Name, model.TableName, field.Name)
 			if err := utils.DB.Exec(indexSQL).Error; err != nil {
 				utils.Logger.Error(fmt.Sprintf("Failed to create unique index: %v", err))
 			}
 		} else {
 			// 普通索引
-			indexSQL := fmt.Sprintf("CREATE INDEX idx_%s_%s ON `%s` (`%s`)", 
+			indexSQL := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s)",
 				model.TableName, field.Name, model.TableName, field.Name)
 			if err := utils.DB.Exec(indexSQL).Error; err != nil {
 				utils.Logger.Error(fmt.Sprintf("Failed to create index: %v", err))
@@ -90,12 +90,12 @@ func (s *schemaManager) AlterTable(model *models.Model, oldModel *models.Model) 
 }
 
 func (s *schemaManager) DropTable(model *models.Model) error {
-	sql := fmt.Sprintf("DROP TABLE IF EXISTS `%s`", model.TableName)
-	
+	sql := fmt.Sprintf("DROP TABLE IF EXISTS %s", model.TableName)
+
 	if err := utils.DB.Exec(sql).Error; err != nil {
 		return fmt.Errorf("failed to drop table: %w", err)
 	}
-	
+
 	utils.Logger.Info(fmt.Sprintf("Table %s dropped successfully", model.TableName))
 	return nil
 }

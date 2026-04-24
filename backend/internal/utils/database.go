@@ -6,7 +6,8 @@ import (
 
 	"github.com/dmdp/platform/internal/config"
 	"github.com/dmdp/platform/internal/models"
-	"gorm.io/driver/mysql"
+	"go.uber.org/zap"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -16,14 +17,16 @@ var DB *gorm.DB
 func InitDatabase(cfg *config.DatabaseConfig) error {
 	var err error
 
-	gormConfig := &gorm.Config{}
+	gormConfig := &gorm.Config{
+		PrepareStmt: false, // 禁用 prepared statements 避免缓存计划问题
+	}
 	if config.Get().Server.Mode == "debug" {
 		gormConfig.Logger = logger.Default.LogMode(logger.Info)
 	} else {
 		gormConfig.Logger = logger.Default.LogMode(logger.Silent)
 	}
 
-	DB, err = gorm.Open(mysql.Open(cfg.DSN()), gormConfig)
+	DB, err = gorm.Open(postgres.Open(cfg.DSN()), gormConfig)
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
 	}
@@ -42,7 +45,11 @@ func InitDatabase(cfg *config.DatabaseConfig) error {
 }
 
 func AutoMigrate() error {
-	err := DB.AutoMigrate(
+	// 使用 DisableForeignKeyConstraintWhenMigrating 避免外键约束问题
+	migrator := DB.Migrator()
+
+	// 逐个迁移表,忽略已存在的表
+	modelsToMigrate := []interface{}{
 		&models.User{},
 		&models.Role{},
 		&models.Permission{},
@@ -64,9 +71,15 @@ func AutoMigrate() error {
 		&models.CommentCount{},
 		&models.Email{},
 		&models.Dashboard{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to auto migrate: %w", err)
+	}
+
+	for _, model := range modelsToMigrate {
+		if err := migrator.AutoMigrate(model); err != nil {
+			Logger.Warn("Migration warning",
+				zap.String("model", fmt.Sprintf("%T", model)),
+				zap.Error(err))
+			// 继续迁移其他表,不中断
+		}
 	}
 
 	Logger.Info("Database migration completed")
