@@ -131,7 +131,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
   }, [visible, fields])
 
   const handleSave = async () => {
-    if (!model || !record) return
+    if (!model) return
     
     try {
       setSaving(true)
@@ -154,9 +154,19 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
         }
       })
       
-      await dataApi.update(model.name, record.id, submitData)
-      message.success('保存成功')
+      if (record) {
+        // 编辑模式
+        await dataApi.update(model.name, record.id, submitData)
+        message.success('保存成功')
+      } else {
+        // 添加模式
+        await dataApi.create(model.name, submitData)
+        message.success('添加成功')
+      }
       onUpdate()
+      if (!record) {
+        onClose() // 添加成功后关闭
+      }
     } catch (error: any) {
       message.error(error.response?.data?.error || '保存失败')
     } finally {
@@ -234,22 +244,44 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
 
   const renderFieldInput = (field: Field) => {
     if (field.type === 'select' || field.type === 'multi_select') {
-      const options = JSON.parse(field.options || '[]')
+      let options: any[] = []
+      try {
+        let parsed = JSON.parse(field.options || '[]')
+        // 处理双重编码
+        if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
+          parsed = JSON.parse(parsed[0])
+        }
+        options = parsed
+      } catch (e) {
+        console.error('Failed to parse options:', field.options)
+      }
+      const hasColorConfig = Array.isArray(options) && options.length > 0 && options[0]?.label
+      
       return (
         <Select
           mode={field.type === 'multi_select' ? 'multiple' : undefined}
           placeholder={`请选择${field.display_name}`}
           style={{ width: '100%' }}
         >
-          {options.map((opt: string) => (
-            <Option key={opt} value={opt}>{opt}</Option>
-          ))}
+          {hasColorConfig ? (
+            options.map((opt: any) => (
+              <Option key={opt.label} value={opt.label}>{opt.label}</Option>
+            ))
+          ) : (
+            options.map((opt: string) => (
+              <Option key={opt} value={opt}>{opt}</Option>
+            ))
+          )}
         </Select>
       )
     }
     
     if (field.type === 'date') {
       return <DatePicker style={{ width: '100%' }} placeholder="选择日期" />
+    }
+    
+    if (field.type === 'datetime') {
+      return <DatePicker showTime style={{ width: '100%' }} placeholder="选择日期时间" />
     }
     
     if (field.type === 'boolean') {
@@ -263,6 +295,21 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
     
     if (field.type === 'number') {
       return <Input type="number" placeholder={`请输入${field.display_name}`} />
+    }
+    
+    if (field.type === 'file' || field.type === 'image') {
+      return (
+        <Upload
+          action="/api/upload"
+          name="file"
+          showUploadList={false}
+          onSuccess={(response: any) => {
+            form.setFieldsValue({ [field.name]: response.url })
+          }}
+        >
+          <Button icon={<PaperClipOutlined />}>上传{field.type === 'image' ? '图片' : '文件'}</Button>
+        </Upload>
+      )
     }
     
     if (field.type === 'user') {
@@ -315,14 +362,6 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       )
     }
     
-    if (field.type === 'attachment') {
-      return (
-        <Upload>
-          <Button icon={<PaperClipOutlined />}>+ 上传文件</Button>
-        </Upload>
-      )
-    }
-    
     return <Input placeholder={`请输入${field.display_name}`} />
   }
 
@@ -351,19 +390,24 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Button type="text" icon={<LeftOutlined />} onClick={onClose} />
+              <span style={{ fontSize: 16, fontWeight: 500 }}>
+                {record ? '编辑记录' : '添加记录'}
+              </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Button 
-                type="text" 
-                icon={<HistoryOutlined />} 
-                onClick={() => setHistoryVisible(true)}
-              />
-              <div style={{ position: 'relative' }}>
-                <Button 
-                  type="text" 
-                  icon={<MessageOutlined />} 
-                  onClick={() => setCommentCollapsed(!commentCollapsed)}
-                />
+              {record && (
+                <>
+                  <Button 
+                    type="text" 
+                    icon={<HistoryOutlined />} 
+                    onClick={() => setHistoryVisible(true)}
+                  />
+                  <div style={{ position: 'relative' }}>
+                    <Button 
+                      type="text" 
+                      icon={<MessageOutlined />} 
+                      onClick={() => setCommentCollapsed(!commentCollapsed)}
+                    />
                 {comments.length > 0 && (
                   <span style={{
                     position: 'absolute',
@@ -382,6 +426,8 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
                   </span>
                 )}
               </div>
+                </>
+              )}
               <Button type="text" icon={<CloseOutlined />} onClick={onClose} />
             </div>
           </div>
@@ -394,7 +440,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
           {/* 保存按钮 */}
           <div style={{ marginTop: 24 }}>
             <Button type="primary" onClick={handleSave} loading={saving}>
-              保存
+              {record ? '保存' : '添加'}
             </Button>
           </div>
         </div>

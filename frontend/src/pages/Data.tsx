@@ -1397,17 +1397,17 @@ const Data = () => {
         </>
       )}
 
-      {/* 添加记录Modal */}
-      <RecordFormModal
+      {/* 添加记录 - 复用 RecordDetail */}
+      <RecordDetail
         visible={addRecordModalVisible}
-        record={undefined}
+        record={null}
         model={model}
         fields={fields}
-        form={addRecordForm}
-        onSubmit={handleAddRecordSubmit}
-        onCancel={() => {
+        onClose={() => {
           setAddRecordModalVisible(false)
-          addRecordForm.resetFields()
+        }}
+        onUpdate={() => {
+          fetchData()
         }}
       />
 
