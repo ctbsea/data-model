@@ -9,20 +9,42 @@ export interface Automation {
   triggers: string
   actions: string
   run_count: number
+  success_count: number
+  fail_count: number
+  webhook_token: string
   created_by: string
   created_at: string
   updated_at: string
 }
 
+export interface StepLog {
+  type: string
+  status: 'success' | 'failed'
+  result: string
+  error: string
+  duration_ms: number
+}
+
 export interface AutomationRun {
   id: string
   automation_id: string
-  status: string
+  status: 'running' | 'success' | 'failed'
   trigger_data: string
+  steps: string  // JSON: StepLog[]
   result: string
   error: string
+  retry_count: number
   started_at: string
   completed_at: string | null
+}
+
+export interface AutomationStats {
+  run_count: number
+  success_count: number
+  fail_count: number
+  avg_duration_ms: number
+  daily_stats: { date: string; success_count: number; fail_count: number }[]
+  last_run: AutomationRun | null
 }
 
 export const automationApi = {
@@ -44,6 +66,12 @@ export const automationApi = {
   toggleEnable: (id: string) =>
     request.put<any, Automation>(`/automations/${id}/toggle`),
 
-  listRuns: (id: string) =>
-    request.get<any, { runs: AutomationRun[] }>(`/automations/${id}/runs`),
+  listRuns: (id: string, status?: string) =>
+    request.get<any, { runs: AutomationRun[] }>(`/automations/${id}/runs`, { params: status ? { status } : {} }),
+
+  getStats: (id: string) =>
+    request.get<any, AutomationStats>(`/automations/${id}/stats`),
+
+  regenerateWebhookToken: (id: string) =>
+    request.post<any, { webhook_token: string }>(`/automations/${id}/webhook-token`),
 }

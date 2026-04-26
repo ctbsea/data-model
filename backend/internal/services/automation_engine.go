@@ -62,6 +62,7 @@ type AutomationEngine interface {
 	Start() error
 	Stop()
 	TriggerEvent(eventType, modelName, recordID string, recordData map[string]interface{})
+	TriggerWebhook(token string, payload map[string]interface{}) error
 	ReloadAutomation(automationID string)
 }
 
@@ -109,8 +110,16 @@ func (e *automationEngine) TriggerEvent(eventType, modelName, recordID string, r
 	go e.processEvent(eventType, modelName, recordID, recordData)
 }
 
-func (e *automationEngine) ReloadAutomation(automationID string) {
-	e.mu.Lock()
+func (e *automationEngine) TriggerWebhook(token string, payload map[string]interface{}) error {
+	var automation models.Automation
+	if err := e.db.Where("webhook_token = ? AND enabled = true", token).First(&automation).Error; err != nil {
+		return fmt.Errorf("webhook: invalid token or automation disabled")
+	}
+	go e.executeAutomationWithRetry(automation, payload, 0)
+	return nil
+}
+
+func (e *automationEngine) ReloadAutomation(automationID string) {	e.mu.Lock()
 	if entryID, ok := e.cronIDs[automationID]; ok {
 		e.cron.Remove(entryID)
 		delete(e.cronIDs, automationID)
@@ -250,8 +259,15 @@ func (e *automationEngine) finalizeRun(runID, automationID, status string, steps
 		}
 	}
 	e.db.Model(&models.AutomationRun{}).Where("id = ?", runID).Updates(updates)
-	e.db.Model(&models.Automation{}).Where("id = ?", automationID).
-		UpdateColumn("run_count", gorm.Expr("run_count + 1"))
+
+	countCol := "success_count"
+	if status == "failed" {
+		countCol = "fail_count"
+	}
+	e.db.Model(&models.Automation{}).Where("id = ?", automationID).Updates(map[string]interface{}{
+		"run_count":  gorm.Expr("run_count + 1"),
+		countCol:     gorm.Expr(countCol + " + 1"),
+	})
 }
 
 func (e *automationEngine) executeAction(action ActionConfig, triggerData map[string]interface{}) (string, error) {
@@ -264,6 +280,8 @@ func (e *automationEngine) executeAction(action ActionConfig, triggerData map[st
 		return e.executeUpdateRecord(action.Config, triggerData)
 	case "create_record":
 		return e.executeCreateRecord(action.Config, triggerData)
+	case "delete_record":
+		return e.executeDeleteRecord(action.Config, triggerData)
 	default:
 		return "", fmt.Errorf("unknown action type: %s", action.Type)
 	}
@@ -405,6 +423,33 @@ func (e *automationEngine) executeCreateRecord(cfg map[string]interface{}, trigg
 		return "", err
 	}
 	return fmt.Sprintf("created record in %s", modelName), nil
+}
+
+func (e *automationEngine) executeDeleteRecord(cfg map[string]interface{}, triggerData map[string]interface{}) (string, error) {
+	modelName := stringVal(cfg, "model", "")
+	recordID := stringVal(cfg, "record_id", "")
+	if modelName == "" {
+		return "", fmt.Errorf("delete_record: model is required")
+	}
+	if recordID == "" {
+		if id, ok := triggerData["id"]; ok {
+			recordID = fmt.Sprintf("%v", id)
+		}
+	}
+	recordID = interpolate(recordID, triggerData)
+	if recordID == "" {
+		return "", fmt.Errorf("delete_record: record_id is required")
+	}
+
+	var mdl models.Model
+	if err := e.db.Where("name = ?", modelName).First(&mdl).Error; err != nil {
+		return "", fmt.Errorf("delete_record: model %q not found", modelName)
+	}
+
+	if err := e.db.Table(mdl.TableName).Where("id = ?", recordID).Delete(nil).Error; err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("deleted record %s from %s", recordID, modelName), nil
 }
 
 func (e *automationEngine) registerScheduledAutomation(automation models.Automation) {

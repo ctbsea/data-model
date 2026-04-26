@@ -143,6 +143,7 @@ func main() {
 	roleHandler := handlers.NewRoleHandler()
 	modelHandler := handlers.NewModelHandler()
 	dataHandler := handlers.NewDataHandler(engine)
+	automationHandler := handlers.NewAutomationHandler(engine)
 	pageHandler := handlers.NewPageHandler()
 	workflowHandler := handlers.NewWorkflowHandler()
 	commentHandler := handlers.NewCommentHandler(utils.DB)
@@ -159,6 +160,9 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/refresh", authHandler.Refresh)
 		}
+
+		// 公开 webhook 触发路由（无需 JWT）
+		api.POST("/webhooks/automation/:token", automationHandler.WebhookTrigger)
 
 		// 需要认证的路由
 		protected := api.Group("")
@@ -237,7 +241,6 @@ func main() {
 			}
 
 			// 自动化管理
-			automationHandler := handlers.NewAutomationHandler(engine)
 			automations := protected.Group("/automations")
 			{
 				automations.GET("/model/:modelId", automationHandler.List)
@@ -247,6 +250,8 @@ func main() {
 				automations.DELETE("/:id", automationHandler.Delete)
 				automations.PUT("/:id/toggle", automationHandler.ToggleEnable)
 				automations.GET("/:id/runs", automationHandler.ListRuns)
+				automations.GET("/:id/stats", automationHandler.GetStats)
+				automations.POST("/:id/webhook-token", automationHandler.RegenerateWebhookToken)
 			}
 
 			// 页面管理
