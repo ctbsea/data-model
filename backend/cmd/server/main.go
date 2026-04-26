@@ -228,6 +228,19 @@ func main() {
 				data.POST("/:modelName/batch", dataHandler.BatchOperation)
 			}
 
+			// 自动化管理
+			automationHandler := handlers.NewAutomationHandler()
+			automations := protected.Group("/automations")
+			{
+				automations.GET("/model/:modelId", automationHandler.List)
+				automations.GET("/:id", automationHandler.GetByID)
+				automations.POST("", automationHandler.Create)
+				automations.PUT("/:id", automationHandler.Update)
+				automations.DELETE("/:id", automationHandler.Delete)
+				automations.PUT("/:id/toggle", automationHandler.ToggleEnable)
+				automations.GET("/:id/runs", automationHandler.ListRuns)
+			}
+
 			// 页面管理
 			pages := protected.Group("/pages")
 			{

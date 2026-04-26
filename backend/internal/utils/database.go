@@ -71,6 +71,8 @@ func AutoMigrate() error {
 		&models.CommentCount{},
 		&models.Email{},
 		&models.Dashboard{},
+		&models.Automation{},
+		&models.AutomationRun{},
 	}
 
 	for _, model := range modelsToMigrate {
