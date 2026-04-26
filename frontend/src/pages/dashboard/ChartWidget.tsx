@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Spin, Empty, Select, Button, Drawer, Form, Input, Radio, message, Popconfirm } from 'antd'
+import { Spin, Empty, Select, Button, Drawer, Form, Input, Radio, message } from 'antd'
 import { SettingOutlined, DeleteOutlined } from '@ant-design/icons'
 import { PieChart, Pie, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { Widget, ChartConfig } from './types'
 import { modelApi, Model, Field } from '../../api/model'
-import { dataApi } from '../../api/data'
-import { userApi, User } from '../../api/user'
+import { dataApi, AggregateResult } from '../../api/data'
 
 const { Option } = Select
 
@@ -19,28 +18,39 @@ interface ChartWidgetProps {
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1']
 
+const GRANULARITY_OPTIONS = [
+  { label: '按日', value: 'day' },
+  { label: '按周', value: 'week' },
+  { label: '按月', value: 'month' },
+]
+
 export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpdate, onDelete, onConfigDrawerChange }) => {
   const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<any[]>([])
+  const [data, setData] = useState<AggregateResult[]>([])
   const [configDrawerVisible, setConfigDrawerVisible] = useState(false)
   const [form] = Form.useForm()
   const [modelFields, setModelFields] = useState<Field[]>([])
 
   const config = widget.config as ChartConfig
 
-  // 通知父组件配置抽屉状态变化
   useEffect(() => {
     onConfigDrawerChange?.(configDrawerVisible)
   }, [configDrawerVisible, onConfigDrawerChange])
 
-  // 加载图表数据
   useEffect(() => {
-    if (config.modelName && config.dimensionField) {
+    if (config.modelName) {
       loadChartData()
     }
-  }, [config.modelName, config.dimensionField, config.valueField, config.chartType, config.valueAggregation])
+  }, [
+    config.modelName,
+    config.dimensionField,
+    config.valueField,
+    config.chartType,
+    config.valueAggregation,
+    config.timeField,
+    config.granularity,
+  ])
 
-  // 加载模型字段
   useEffect(() => {
     if (config.modelId) {
       const model = models.find(m => m.id === config.modelId)
@@ -50,106 +60,46 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
     }
   }, [config.modelId, models])
 
+  const isTimeLine = config.chartType === 'line' && !!config.timeField && !!config.granularity
+
   const loadChartData = async () => {
-    if (!config.modelName || !config.dimensionField) return
-    
+    if (!config.modelName) return
+
     setLoading(true)
     try {
-      // 获取所有数据
-      const res = await dataApi.list(config.modelName, 1, 1000)
-      const rawData = res.data || []
-      
-      // 获取维度字段信息 - 优先从 models 获取，如果没有则从 API 获取
-      let currentModel = models.find(m => m.id === config.modelId)
-      if (!currentModel || !currentModel.fields || currentModel.fields.length === 0) {
-        try {
-          currentModel = await modelApi.get(config.modelId!)
-        } catch (e) {
-          console.error('Failed to get model:', e)
-        }
+      let result: AggregateResult[]
+
+      if (isTimeLine) {
+        // 时间维度折线图：后端时间分桶聚合
+        result = await dataApi.aggregate(config.modelName, {
+          time_field: config.timeField,
+          granularity: config.granularity,
+          metrics: [{
+            func: config.valueAggregation,
+            field: config.valueAggregation !== 'count' ? config.valueField : undefined,
+            alias: 'value',
+          }],
+        })
+        // 格式化时间标签
+        result = result.map(item => ({
+          ...item,
+          name: formatTimeBucket(item.name, config.granularity),
+        }))
+      } else if (config.dimensionField) {
+        // 普通分组聚合：后端 GROUP BY
+        result = await dataApi.aggregate(config.modelName, {
+          group_by: config.dimensionField,
+          metrics: [{
+            func: config.valueAggregation,
+            field: config.valueAggregation !== 'count' ? config.valueField : undefined,
+            alias: 'value',
+          }],
+        })
+      } else {
+        return
       }
-      const dimensionFieldInfo = currentModel?.fields?.find(f => f.name === config.dimensionField)
-      const isUserField = dimensionFieldInfo?.type === 'user'
-      const isRelationField = dimensionFieldInfo?.type === 'relation'
-      
-      // 如果是用户字段，获取用户信息
-      let userMap: Record<string, User> = {}
-      if (isUserField) {
-        const userIds = [...new Set(rawData.map((item: any) => item[config.dimensionField]).filter(Boolean))]
-        if (userIds.length > 0) {
-          const userPromises = userIds.map(id => userApi.get(id).catch(() => null))
-          const users = await Promise.all(userPromises)
-          users.forEach(user => {
-            if (user) {
-              userMap[user.id] = user
-            }
-          })
-        }
-      }
-      
-      // 如果是关联字段，获取关联数据
-      let relationDataMap: Record<string, any> = {}
-      if (isRelationField && dimensionFieldInfo?.relation_model) {
-        const relationIds = [...new Set(rawData.map((item: any) => item[config.dimensionField]).filter(Boolean))]
-        if (relationIds.length > 0) {
-          // 获取关联模型的所有数据，然后筛选需要的
-          const relationRes = await dataApi.list(dimensionFieldInfo.relation_model, 1, 1000)
-          const allRelationData = relationRes.data || []
-          relationIds.forEach(id => {
-            const found = allRelationData.find((d: any) => d.id === id)
-            if (found) {
-              relationDataMap[id] = found
-            }
-          })
-        }
-      }
-      
-      // 获取关联字段的显示字段
-      const displayFields = dimensionFieldInfo?.display_fields || ['name', 'title', 'id']
-      
-      // 按维度分组统计
-      const grouped: Record<string, number> = {}
-      rawData.forEach((item: any) => {
-        let key = item[config.dimensionField] || '未分类'
-        const originalKey = key
-        
-        // 如果是用户字段，显示用户名
-        if (isUserField && key !== '未分类') {
-          const user = userMap[key]
-          key = user?.nickname || user?.username || key
-        }
-        
-        // 如果是关联字段，显示关联数据的显示字段
-        if (isRelationField && key !== '未分类') {
-          const relationData = relationDataMap[originalKey]
-          if (relationData) {
-            // 按display_fields顺序查找第一个有值的字段
-            for (const field of displayFields) {
-              if (relationData[field]) {
-                key = relationData[field]
-                break
-              }
-            }
-          }
-        }
-        
-        if (config.valueAggregation === 'count') {
-          grouped[key] = (grouped[key] || 0) + 1
-        } else if (config.valueAggregation === 'sum' && config.valueField) {
-          grouped[key] = (grouped[key] || 0) + (Number(item[config.valueField]) || 0)
-        } else if (config.valueAggregation === 'avg' && config.valueField) {
-          if (!grouped[key]) grouped[key] = 0
-          grouped[key] = grouped[key] / (rawData.filter((i: any) => i[config.dimensionField] === originalKey).length || 1)
-        }
-      })
-      
-      // 转换为图表数据
-      const chartData = Object.entries(grouped).map(([name, value]) => ({
-        name,
-        value: Number(value.toFixed(2))
-      }))
-      
-      setData(chartData)
+
+      setData(result)
     } catch (error) {
       console.error('Failed to load chart data:', error)
     } finally {
@@ -157,11 +107,26 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
     }
   }
 
+  const formatTimeBucket = (raw: string | undefined, granularity?: string) => {
+    if (!raw) return ''
+    try {
+      const d = new Date(raw)
+      if (granularity === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (granularity === 'week') {
+        const weekStart = new Date(d)
+        return `${weekStart.getMonth() + 1}/${weekStart.getDate()}`
+      }
+      return `${d.getMonth() + 1}/${d.getDate()}`
+    } catch {
+      return raw || ''
+    }
+  }
+
   const handleConfigSave = async () => {
     try {
       const values = await form.validateFields()
       const model = models.find(m => m.id === values.modelId)
-      
+
       onUpdate({
         ...widget,
         title: values.title,
@@ -173,7 +138,9 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
           dimensionField: values.dimensionField,
           valueField: values.valueField,
           valueAggregation: values.valueAggregation,
-        }
+          timeField: values.timeField,
+          granularity: values.granularity,
+        },
       })
       setConfigDrawerVisible(false)
       message.success('配置已保存')
@@ -190,8 +157,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
     if (!data.length) {
       return <Empty description="暂无数据" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }} />
     }
-
-    const total = data.reduce((sum, item) => sum + item.value, 0)
 
     if (config.chartType === 'pie' || config.chartType === 'donut') {
       return (
@@ -213,9 +178,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
-            />
+            <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }} />
             <Legend />
           </PieChart>
         </ResponsiveContainer>
@@ -229,9 +192,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
             <CartesianGrid strokeDasharray="3 3" stroke="#e8e8e8" vertical={false} />
             <XAxis dataKey="name" stroke="#666" tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
             <YAxis stroke="#666" tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
-            />
+            <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }} />
             <Legend />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
@@ -250,9 +211,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
             <CartesianGrid strokeDasharray="3 3" stroke="#e8e8e8" vertical={false} />
             <XAxis dataKey="name" stroke="#666" tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
             <YAxis stroke="#666" tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
-            />
+            <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }} />
             <Legend />
             <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={{ fill: '#6366f1', strokeWidth: 2, r: 4 }} activeDot={{ r: 6 }} />
           </LineChart>
@@ -263,22 +222,21 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
     return null
   }
 
+  const dateFields = modelFields.filter(f => !f.deleted && (f.type === 'date' || f.name === 'created_at' || f.name === 'updated_at'))
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #e8e8e8' }}>
       {/* 标题栏 */}
-      <div 
-        style={{ 
-          padding: '12px 16px', 
-          borderBottom: '1px solid #e8e8e8', 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          background: '#fafafa',
-        }}
-      >
-        {/* 拖动手柄 - 只在标题文字区域，配置打开时禁用 */}
-        <span 
-          className={configDrawerVisible ? '' : 'drag-handle'} 
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid #e8e8e8',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: '#fafafa',
+      }}>
+        <span
+          className={configDrawerVisible ? '' : 'drag-handle'}
           style={{ fontWeight: 500, cursor: configDrawerVisible ? 'default' : 'move', userSelect: 'none' }}
         >
           {widget.title || '统计图表'}
@@ -292,13 +250,15 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
               dimensionField: config.dimensionField,
               valueField: config.valueField,
               valueAggregation: config.valueAggregation || 'count',
+              timeField: config.timeField,
+              granularity: config.granularity,
             })
             setConfigDrawerVisible(true)
           }} />
           <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={onDelete} />
         </div>
       </div>
-      
+
       {/* 图表区域 */}
       <div style={{ flex: 1, padding: 16, minHeight: 0 }}>
         {renderChart()}
@@ -322,22 +282,19 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
           <Form.Item label="标题" name="title" rules={[{ required: true }]}>
             <Input placeholder="请输入标题" />
           </Form.Item>
-          
+
           <Form.Item label="数据源模型" name="modelId" rules={[{ required: true }]}>
             <Select placeholder="选择模型" onChange={(value) => {
-              form.setFieldsValue({ dimensionField: undefined, valueField: undefined })
-              // 更新模型字段
+              form.setFieldsValue({ dimensionField: undefined, valueField: undefined, timeField: undefined })
               const selectedModel = models.find(m => m.id === value)
-              if (selectedModel) {
-                setModelFields(selectedModel.fields || [])
-              }
+              if (selectedModel) setModelFields(selectedModel.fields || [])
             }}>
               {models.map(m => (
                 <Option key={m.id} value={m.id}>{m.display_name}</Option>
               ))}
             </Select>
           </Form.Item>
-          
+
           <Form.Item label="图表类型" name="chartType" rules={[{ required: true }]}>
             <Select placeholder="选择图表类型">
               <Option value="bar">柱状图</Option>
@@ -346,15 +303,58 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
               <Option value="line">折线图</Option>
             </Select>
           </Form.Item>
-          
-          <Form.Item label="维度字段" name="dimensionField" rules={[{ required: true }]}>
-            <Select placeholder="选择维度字段">
-              {modelFields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at').map(f => (
-                <Option key={f.id} value={f.name}>{f.display_name}</Option>
-              ))}
-            </Select>
+
+          {/* 折线图：时间维度配置 */}
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.chartType !== curr.chartType}>
+            {({ getFieldValue }) => {
+              if (getFieldValue('chartType') !== 'line') return null
+              return (
+                <>
+                  <Form.Item label="时间字段（折线图时序模式）" name="timeField">
+                    <Select placeholder="选择时间字段（可选）" allowClear>
+                      <Option value="created_at">创建时间</Option>
+                      <Option value="updated_at">更新时间</Option>
+                      {modelFields.filter(f => !f.deleted && f.type === 'date').map(f => (
+                        <Option key={f.id} value={f.name}>{f.display_name}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(prev, curr) => prev.timeField !== curr.timeField}>
+                    {({ getFieldValue: gfv }) => {
+                      if (!gfv('timeField')) return null
+                      return (
+                        <Form.Item label="时间粒度" name="granularity" rules={[{ required: true, message: '请选择时间粒度' }]}>
+                          <Radio.Group>
+                            {GRANULARITY_OPTIONS.map(o => (
+                              <Radio key={o.value} value={o.value}>{o.label}</Radio>
+                            ))}
+                          </Radio.Group>
+                        </Form.Item>
+                      )
+                    }}
+                  </Form.Item>
+                </>
+              )
+            }}
           </Form.Item>
-          
+
+          {/* 非时间维度折线图 / 其他图表：维度字段 */}
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.chartType !== curr.chartType || prev.timeField !== curr.timeField}>
+            {({ getFieldValue }) => {
+              const isLineWithTime = getFieldValue('chartType') === 'line' && !!getFieldValue('timeField')
+              if (isLineWithTime) return null
+              return (
+                <Form.Item label="维度字段" name="dimensionField" rules={[{ required: true }]}>
+                  <Select placeholder="选择维度字段">
+                    {modelFields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at').map(f => (
+                      <Option key={f.id} value={f.name}>{f.display_name}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )
+            }}
+          </Form.Item>
+
           <Form.Item label="数值聚合方式" name="valueAggregation" rules={[{ required: true }]}>
             <Radio.Group>
               <Radio value="count">统计记录总数</Radio>
@@ -362,7 +362,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({ widget, models, onUpda
               <Radio value="avg">平均值</Radio>
             </Radio.Group>
           </Form.Item>
-          
+
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.valueAggregation !== curr.valueAggregation}>
             {({ getFieldValue }) => {
               const agg = getFieldValue('valueAggregation')

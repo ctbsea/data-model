@@ -220,7 +220,8 @@ func main() {
 			// 动态数据管理
 			data := protected.Group("/data")
 			{
-				data.GET("/:modelName", dataHandler.ListData)
+				data.GET("/:modelName/aggregate", dataHandler.AggregateData)
+					data.GET("/:modelName", dataHandler.ListData)
 				data.GET("/:modelName/:id", dataHandler.GetData)
 				data.POST("/:modelName", dataHandler.CreateData)
 				data.PUT("/:modelName/:id", dataHandler.UpdateData)
