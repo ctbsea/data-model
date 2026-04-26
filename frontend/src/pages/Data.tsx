@@ -5,6 +5,7 @@ import KanbanView from '../components/KanbanView'
 import RecordDetail from '../components/RecordDetail'
 import EmailModal from '../components/EmailModal'
 import { RecordFormModal } from './data/components/RecordFormModal'
+import { AutomationModal } from './data/components/AutomationModal'
 import { commentApi } from '../api/comment'
 import {
   message,
@@ -38,6 +39,7 @@ import {
   MoreOutlined,
   ClearOutlined,
   EditOutlined,
+  ThunderboltOutlined,
   ArrowLeftOutlined,
   SettingOutlined,
   LockOutlined,
@@ -148,6 +150,7 @@ const Data = () => {
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [addRecordModalVisible, setAddRecordModalVisible] = useState(false)
+  const [automationModalVisible, setAutomationModalVisible] = useState(false)
   const [addRecordForm] = Form.useForm()
   const headerScrollRef = useRef<HTMLDivElement>(null)
   const bodyScrollRef = useRef<HTMLDivElement>(null)
@@ -1307,11 +1310,16 @@ const Data = () => {
             >
               <Button icon={<UploadOutlined />}>导入数据</Button>
             </Upload>
-            <Button 
-              icon={<DownloadOutlined />}
+            <Button icon={<DownloadOutlined />}
               onClick={handleExportData}
             >
               导出数据
+            </Button>
+            <Button
+              icon={<ThunderboltOutlined />}
+              onClick={() => setAutomationModalVisible(true)}
+            >
+              自动化
             </Button>
             {Object.keys(filters).length > 0 && (
               <Tag color="blue">已应用筛选条件</Tag>
@@ -1545,6 +1553,15 @@ const Data = () => {
             setCurrentEmail('')
           }
         }}
+      />
+
+      {/* 自动化Modal */}
+      <AutomationModal
+        visible={automationModalVisible}
+        modelId={model?.id || ''}
+        modelName={model?.display_name || ''}
+        fields={fields}
+        onClose={() => setAutomationModalVisible(false)}
       />
     </div>
     </>

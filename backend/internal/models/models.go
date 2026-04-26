@@ -278,3 +278,33 @@ type Dashboard struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// Automation 自动化规则
+type Automation struct {
+	ID          string    `json:"id" gorm:"primaryKey;size:64"`
+	ModelID     string    `json:"model_id" gorm:"index;size:64;not null"`
+	Name        string    `json:"name" gorm:"size:128;not null"`
+	Description string    `json:"description" gorm:"size:512"`
+	Enabled     bool      `json:"enabled" gorm:"default:false"`
+	// 触发条件 JSON: { type: "record_create" | "record_match" | "scheduled", conditions: [...], schedule: {...} }
+	Triggers    string    `json:"triggers" gorm:"type:json"`
+	// 执行动作 JSON: [{ type: "api_call" | "send_email", config: {...} }]
+	Actions     string    `json:"actions" gorm:"type:json"`
+	RunCount    int       `json:"run_count" gorm:"default:0"`
+	CreatedBy   string    `json:"created_by" gorm:"size:64"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// AutomationRun 自动化运行记录
+type AutomationRun struct {
+	ID           string     `json:"id" gorm:"primaryKey;size:64"`
+	AutomationID string     `json:"automation_id" gorm:"index;size:64;not null"`
+	Status       string     `json:"status" gorm:"size:20"` // success, failed
+	TriggerData  string     `json:"trigger_data" gorm:"type:json"`
+	Result       string     `json:"result" gorm:"type:text"`
+	Error        string     `json:"error" gorm:"type:text"`
+	StartedAt    time.Time  `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at"`
+}
