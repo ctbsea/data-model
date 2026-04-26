@@ -131,8 +131,52 @@ func (h *DataHandler) DeleteData(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "data deleted successfully"})
 }
 
-func (h *DataHandler) BatchOperation(c *gin.Context) {
+func (h *DataHandler) AggregateData(c *gin.Context) {
 	modelName := c.Param("modelName")
+
+	req := &services.AggregateRequest{
+		GroupBy:     c.Query("group_by"),
+		TimeField:   c.Query("time_field"),
+		Granularity: c.Query("granularity"),
+	}
+
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil {
+			req.Limit = v
+		}
+	}
+
+	if metricsStr := c.Query("metrics"); metricsStr != "" {
+		var metrics []repositories.MetricOption
+		if err := json.Unmarshal([]byte(metricsStr), &metrics); err == nil {
+			req.Metrics = metrics
+		}
+	}
+
+	if filterStr := c.Query("filter"); filterStr != "" {
+		var filter map[string]interface{}
+		if err := json.Unmarshal([]byte(filterStr), &filter); err == nil {
+			req.Filter = filter
+		}
+	}
+
+	if sortsStr := c.Query("sorts"); sortsStr != "" {
+		var sorts []services.SortField
+		if err := json.Unmarshal([]byte(sortsStr), &sorts); err == nil {
+			req.Sort = sorts
+		}
+	}
+
+	result, err := h.dataService.AggregateData(modelName, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *DataHandler) BatchOperation(c *gin.Context) {
 
 	var req BatchOperationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

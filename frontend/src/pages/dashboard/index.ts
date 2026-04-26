@@ -1,4 +1,5 @@
 export { DashboardPage } from './DashboardPage'
 export { PanelComponent } from './PanelComponent'
 export { ChartWidget } from './ChartWidget'
+export { StatisticWidget } from './StatisticWidget'
 export * from './types'

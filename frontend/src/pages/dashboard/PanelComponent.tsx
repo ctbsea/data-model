@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Button, Dropdown, Input, Modal, message } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined, BarChartOutlined, NumberOutlined } from '@ant-design/icons'
 import GridLayout from 'react-grid-layout'
 import { Panel, Widget } from './types'
 import { ChartWidget } from './ChartWidget'
+import { StatisticWidget } from './StatisticWidget'
 import { Model } from '../../api/model'
 import type { MenuProps } from 'antd'
 
@@ -21,11 +22,10 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
   const [containerWidth, setContainerWidth] = useState(1100)
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false)
 
-  // 监听容器宽度变化
   useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
-        setContainerWidth(containerRef.current.offsetWidth - 32) // 减去padding
+        setContainerWidth(containerRef.current.offsetWidth - 32)
       }
     }
     updateWidth()
@@ -33,37 +33,51 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
     return () => window.removeEventListener('resize', updateWidth)
   }, [panel.widgets.length])
 
-  const handleAddWidget = () => {
-    // 计算新组件位置
+  const handleAddWidget = (type: 'chart' | 'statistic') => {
     const existingWidgets = panel.widgets
     let maxY = 0
     existingWidgets.forEach(w => {
       if (w.y + w.h > maxY) maxY = w.y + w.h
     })
 
-    const newWidget: Widget = {
-      id: `widget-${Date.now()}`,
-      type: 'chart',
-      title: '新统计图表',
-      config: {
-        modelId: '',
-        modelName: '',
-        chartType: 'bar',
-        dimensionField: '',
-        valueField: '',
-        valueAggregation: 'count',
-      },
-      x: 0,
-      y: maxY,
-      w: 6,
-      h: 4,
-    }
+    const newWidget: Widget = type === 'chart'
+      ? {
+          id: `widget-${Date.now()}`,
+          type: 'chart',
+          title: '新统计图表',
+          config: {
+            modelId: '',
+            modelName: '',
+            chartType: 'bar',
+            dimensionField: '',
+            valueField: '',
+            valueAggregation: 'count',
+          },
+          x: 0,
+          y: maxY,
+          w: 6,
+          h: 4,
+        }
+      : {
+          id: `widget-${Date.now()}`,
+          type: 'statistic',
+          title: '新统计卡片',
+          config: {
+            modelId: '',
+            modelName: '',
+            aggregation: 'count',
+          },
+          x: 0,
+          y: maxY,
+          w: 3,
+          h: 2,
+        }
 
     onUpdate({
       ...panel,
       widgets: [...panel.widgets, newWidget],
     })
-    message.success('已添加新统计组件')
+    message.success(type === 'chart' ? '已添加统计图表' : '已添加统计卡片')
   }
 
   const handleUpdateWidget = (widgetId: string, updatedWidget: Widget) => {
@@ -94,7 +108,24 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
     }
   }
 
-  const menu: MenuProps = {
+  const addMenu: MenuProps = {
+    items: [
+      {
+        key: 'chart',
+        icon: <BarChartOutlined />,
+        label: '添加统计图表',
+        onClick: () => handleAddWidget('chart'),
+      },
+      {
+        key: 'statistic',
+        icon: <NumberOutlined />,
+        label: '添加统计卡片',
+        onClick: () => handleAddWidget('statistic'),
+      },
+    ],
+  }
+
+  const panelMenu: MenuProps = {
     items: [
       {
         key: 'edit',
@@ -118,7 +149,6 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
     ],
   }
 
-  // 生成布局
   const layout = panel.widgets.map(w => ({
     i: w.id,
     x: w.x,
@@ -128,15 +158,15 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
   }))
 
   return (
-    <div style={{ 
-      background: '#fff', 
-      borderRadius: 8, 
+    <div style={{
+      background: '#fff',
+      borderRadius: 8,
       overflow: 'hidden',
       border: '1px solid #e8e8e8',
     }}>
       {/* 面板头部 */}
-      <div style={{ 
-        padding: '16px 20px', 
+      <div style={{
+        padding: '16px 20px',
         borderBottom: '1px solid #e8e8e8',
         display: 'flex',
         justifyContent: 'space-between',
@@ -158,15 +188,12 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button 
-            type="primary" 
-            icon={<PlusOutlined />} 
-            size="small"
-            onClick={handleAddWidget}
-          >
-            添加统计组件
-          </Button>
-          <Dropdown menu={menu} trigger={['click']}>
+          <Dropdown menu={addMenu} trigger={['click']}>
+            <Button type="primary" icon={<PlusOutlined />} size="small">
+              添加组件
+            </Button>
+          </Dropdown>
+          <Dropdown menu={panelMenu} trigger={['click']}>
             <Button type="text" size="small" icon={<MoreOutlined />} />
           </Dropdown>
         </div>
@@ -175,17 +202,17 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
       {/* 面板内容 */}
       <div ref={containerRef} style={{ padding: 16, minHeight: 300 }}>
         {panel.widgets.length === 0 ? (
-          <div style={{ 
-            height: 200, 
-            display: 'flex', 
+          <div style={{
+            height: 200,
+            display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'center', 
-            alignItems: 'center', 
+            justifyContent: 'center',
+            alignItems: 'center',
             color: '#6b7280',
             gap: 16,
           }}>
             <PlusOutlined style={{ fontSize: 48 }} />
-            <span>点击上方按钮添加统计组件</span>
+            <span>点击上方"添加组件"按钮添加图表或统计卡片</span>
           </div>
         ) : (
           <GridLayout
@@ -195,7 +222,7 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
             rowHeight={80}
             width={containerWidth}
             onLayoutChange={(newLayout) => {
-              if (configDrawerOpen) return // 配置打开时不处理布局变化
+              if (configDrawerOpen) return
               const updatedWidgets = panel.widgets.map(w => {
                 const layoutItem = newLayout.find(l => l.i === w.id)
                 if (layoutItem) {
@@ -203,11 +230,10 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
                 }
                 return w
               })
-              // 只在布局真正变化时更新
-              const hasChange = updatedWidgets.some((w, i) => 
-                w.x !== panel.widgets[i].x || 
-                w.y !== panel.widgets[i].y || 
-                w.w !== panel.widgets[i].w || 
+              const hasChange = updatedWidgets.some((w, i) =>
+                w.x !== panel.widgets[i].x ||
+                w.y !== panel.widgets[i].y ||
+                w.w !== panel.widgets[i].w ||
                 w.h !== panel.widgets[i].h
               )
               if (hasChange) {
@@ -221,13 +247,23 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
           >
             {panel.widgets.map(widget => (
               <div key={widget.id}>
-                <ChartWidget
-                  widget={widget}
-                  models={models}
-                  onUpdate={(w) => handleUpdateWidget(widget.id, w)}
-                  onDelete={() => handleDeleteWidget(widget.id)}
-                  onConfigDrawerChange={setConfigDrawerOpen}
-                />
+                {widget.type === 'statistic' ? (
+                  <StatisticWidget
+                    widget={widget}
+                    models={models}
+                    onUpdate={(w) => handleUpdateWidget(widget.id, w)}
+                    onDelete={() => handleDeleteWidget(widget.id)}
+                    onConfigDrawerChange={setConfigDrawerOpen}
+                  />
+                ) : (
+                  <ChartWidget
+                    widget={widget}
+                    models={models}
+                    onUpdate={(w) => handleUpdateWidget(widget.id, w)}
+                    onDelete={() => handleDeleteWidget(widget.id)}
+                    onConfigDrawerChange={setConfigDrawerOpen}
+                  />
+                )}
               </div>
             ))}
           </GridLayout>

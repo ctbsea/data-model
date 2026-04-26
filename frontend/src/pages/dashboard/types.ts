@@ -35,6 +35,8 @@ export interface ChartConfig {
   dimensionField: string
   valueField: string
   valueAggregation: 'count' | 'sum' | 'avg'
+  timeField?: string
+  granularity?: 'day' | 'week' | 'month'
   filters?: any
 }
 

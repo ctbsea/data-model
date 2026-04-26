@@ -17,11 +17,22 @@ type DataService interface {
 	CreateData(modelName string, data map[string]interface{}) (string, error)
 	GetData(modelName, id string) (map[string]interface{}, error)
 	ListData(modelName string, req *ListDataRequest) (*ListDataResponse, error)
+	AggregateData(modelName string, req *AggregateRequest) ([]map[string]interface{}, error)
 	UpdateData(modelName, id string, data map[string]interface{}, userID string) error
 	DeleteData(modelName, id string) error
 	BatchCreate(modelName string, dataList []map[string]interface{}) ([]string, error)
 	BatchUpdate(modelName string, updates []repositories.BatchUpdateItem, userID string) error
 	BatchDelete(modelName string, ids []string) error
+}
+
+type AggregateRequest struct {
+	GroupBy     string                    `json:"group_by"`
+	TimeField   string                    `json:"time_field"`
+	Granularity string                    `json:"granularity"`
+	Metrics     []repositories.MetricOption `json:"metrics"`
+	Filter      map[string]interface{}    `json:"filter"`
+	Sort        []SortField               `json:"sort"`
+	Limit       int                       `json:"limit"`
 }
 
 type ListDataRequest struct {
@@ -144,6 +155,70 @@ func (s *dataService) ListData(modelName string, req *ListDataRequest) (*ListDat
 		Page:  req.Page,
 		Size:  req.PageSize,
 	}, nil
+}
+
+func (s *dataService) AggregateData(modelName string, req *AggregateRequest) ([]map[string]interface{}, error) {
+	model, err := s.modelRepo.GetByName(modelName)
+	if err != nil {
+		return nil, errors.New("model not found")
+	}
+
+	// 构建字段名集合用于校验
+	fieldSet := make(map[string]string) // name -> type
+	for _, f := range model.Fields {
+		fieldSet[f.Name] = f.Type
+	}
+	// 系统字段也允许
+	fieldSet["id"] = "text"
+	fieldSet["created_at"] = "date"
+	fieldSet["updated_at"] = "date"
+	fieldSet["created_by"] = "text"
+	fieldSet["updated_by"] = "text"
+
+	// 校验 GroupBy 字段
+	if req.GroupBy != "" {
+		if _, ok := fieldSet[req.GroupBy]; !ok {
+			return nil, fmt.Errorf("group_by field '%s' not found in model", req.GroupBy)
+		}
+	}
+
+	// 校验 TimeField
+	if req.TimeField != "" {
+		ft, ok := fieldSet[req.TimeField]
+		if !ok {
+			return nil, fmt.Errorf("time_field '%s' not found in model", req.TimeField)
+		}
+		if ft != "date" && req.TimeField != "created_at" && req.TimeField != "updated_at" {
+			return nil, fmt.Errorf("time_field '%s' must be a date type field", req.TimeField)
+		}
+	}
+
+	// 校验 Metrics 字段类型
+	for _, m := range req.Metrics {
+		if (m.Func == "sum" || m.Func == "avg") && m.Field != "" {
+			ft, ok := fieldSet[m.Field]
+			if !ok {
+				return nil, fmt.Errorf("metric field '%s' not found in model", m.Field)
+			}
+			if ft != "number" {
+				return nil, fmt.Errorf("metric field '%s' must be number type for %s", m.Field, m.Func)
+			}
+		}
+	}
+
+	opts := &repositories.AggregateOptions{
+		GroupBy:     req.GroupBy,
+		TimeField:   req.TimeField,
+		Granularity: req.Granularity,
+		Metrics:     req.Metrics,
+		Filter:      req.Filter,
+		Limit:       req.Limit,
+	}
+	for _, s := range req.Sort {
+		opts.Sort = append(opts.Sort, repositories.SortField{Field: s.Field, Order: s.Order})
+	}
+
+	return s.dynamicRepo.Aggregate(model.TableName, opts)
 }
 
 // attachCommentCounts 批量附加评论统计
