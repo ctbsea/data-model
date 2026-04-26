@@ -14,9 +14,9 @@ type DataHandler struct {
 	dataService services.DataService
 }
 
-func NewDataHandler() *DataHandler {
+func NewDataHandler(engine services.AutomationEngine) *DataHandler {
 	return &DataHandler{
-		dataService: services.NewDataService(),
+		dataService: services.NewDataService(engine),
 	}
 }
 

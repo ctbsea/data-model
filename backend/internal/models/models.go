@@ -301,10 +301,12 @@ type Automation struct {
 type AutomationRun struct {
 	ID           string     `json:"id" gorm:"primaryKey;size:64"`
 	AutomationID string     `json:"automation_id" gorm:"index;size:64;not null"`
-	Status       string     `json:"status" gorm:"size:20"` // success, failed
+	Status       string     `json:"status" gorm:"size:20"` // running, success, failed
 	TriggerData  string     `json:"trigger_data" gorm:"type:json"`
+	Steps        string     `json:"steps" gorm:"type:json"` // [{type, status, result, error, duration_ms}]
 	Result       string     `json:"result" gorm:"type:text"`
 	Error        string     `json:"error" gorm:"type:text"`
+	RetryCount   int        `json:"retry_count" gorm:"default:0"`
 	StartedAt    time.Time  `json:"started_at"`
 	CompletedAt  *time.Time `json:"completed_at"`
 }
