@@ -177,6 +177,7 @@ func (h *DataHandler) AggregateData(c *gin.Context) {
 }
 
 func (h *DataHandler) BatchOperation(c *gin.Context) {
+	modelName := c.Param("modelName")
 
 	var req BatchOperationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -76,8 +76,9 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       // 填充表单数据
       const formValues: any = {}
       fields.forEach(field => {
-        if (field.type === 'date' && record[field.name]) {
-          formValues[field.name] = dayjs(record[field.name])
+        if ((field.type === 'date' || field.type === 'datetime') && record[field.name]) {
+          const d = dayjs(record[field.name])
+          formValues[field.name] = d.isValid() ? d : null
         } else {
           formValues[field.name] = record[field.name]
         }
