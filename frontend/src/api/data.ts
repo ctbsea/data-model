@@ -21,7 +21,7 @@ export interface SortItem {
 
 export interface MetricOption {
   field?: string
-  func: 'count' | 'sum' | 'avg'
+  func: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'distinct'
   alias?: string
 }
 

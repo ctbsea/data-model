@@ -1,12 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Button, Dropdown, Input, Modal, message } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined, BarChartOutlined, NumberOutlined } from '@ant-design/icons'
+import { Button, Dropdown, Input, Modal, Select, DatePicker, Space, Tag, message } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined, BarChartOutlined, NumberOutlined, FilterOutlined } from '@ant-design/icons'
 import GridLayout from 'react-grid-layout'
-import { Panel, Widget } from './types'
+import dayjs from 'dayjs'
+import { Panel, Widget, GlobalFilter } from './types'
 import { ChartWidget } from './ChartWidget'
 import { StatisticWidget } from './StatisticWidget'
 import { Model } from '../../api/model'
 import type { MenuProps } from 'antd'
+
+const { Option } = Select
+const { RangePicker } = DatePicker
 
 interface PanelComponentProps {
   panel: Panel
@@ -15,12 +19,25 @@ interface PanelComponentProps {
   onDelete: () => void
 }
 
+interface AddFilterModalState {
+  open: boolean
+  field: string
+  label: string
+  type: 'select' | 'date_range' | 'text'
+}
+
 export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, onUpdate, onDelete }) => {
   const [editingName, setEditingName] = useState(false)
   const [tempName, setTempName] = useState(panel.name)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(1100)
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false)
+  const [addFilterModal, setAddFilterModal] = useState<AddFilterModalState>({
+    open: false,
+    field: '',
+    label: '',
+    type: 'select',
+  })
 
   useEffect(() => {
     const updateWidth = () => {
@@ -108,6 +125,38 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
     }
   }
 
+  // Global filter handlers
+  const handleFilterValueChange = (filterId: string, value: any) => {
+    const updated = (panel.globalFilters || []).map(f =>
+      f.id === filterId ? { ...f, value } : f
+    )
+    onUpdate({ ...panel, globalFilters: updated })
+  }
+
+  const handleRemoveFilter = (filterId: string) => {
+    const updated = (panel.globalFilters || []).filter(f => f.id !== filterId)
+    onUpdate({ ...panel, globalFilters: updated })
+  }
+
+  const handleAddFilter = () => {
+    if (!addFilterModal.field || !addFilterModal.label) {
+      message.warning('请填写字段名和显示名')
+      return
+    }
+    const newFilter: GlobalFilter = {
+      id: `gf-${Date.now()}`,
+      field: addFilterModal.field,
+      label: addFilterModal.label,
+      type: addFilterModal.type,
+    }
+    onUpdate({
+      ...panel,
+      globalFilters: [...(panel.globalFilters || []), newFilter],
+    })
+    setAddFilterModal({ open: false, field: '', label: '', type: 'select' })
+    message.success('已添加全局过滤器')
+  }
+
   const addMenu: MenuProps = {
     items: [
       {
@@ -134,6 +183,12 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
         onClick: () => setEditingName(true),
       },
       {
+        key: 'add-filter',
+        icon: <FilterOutlined />,
+        label: '添加全局过滤器',
+        onClick: () => setAddFilterModal(s => ({ ...s, open: true })),
+      },
+      {
         key: 'delete',
         icon: <DeleteOutlined />,
         label: '删除面板',
@@ -157,6 +212,8 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
     h: w.h,
   }))
 
+  const globalFilters = panel.globalFilters || []
+
   return (
     <div style={{
       background: '#fff',
@@ -167,7 +224,7 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
       {/* 面板头部 */}
       <div style={{
         padding: '16px 20px',
-        borderBottom: '1px solid #e8e8e8',
+        borderBottom: globalFilters.length > 0 ? 'none' : '1px solid #e8e8e8',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -198,6 +255,73 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
           </Dropdown>
         </div>
       </div>
+
+      {/* 全局过滤器条 */}
+      {globalFilters.length > 0 && (
+        <div style={{
+          padding: '10px 20px',
+          borderBottom: '1px solid #e8e8e8',
+          background: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}>
+          <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, whiteSpace: 'nowrap' }}>
+            <FilterOutlined style={{ marginRight: 4 }} />
+            全局筛选
+          </span>
+          {globalFilters.map(filter => (
+            <Space key={filter.id} size={4} align="center">
+              <span style={{ fontSize: 12, color: '#374151' }}>{filter.label}：</span>
+              {filter.type === 'date_range' ? (
+                <RangePicker
+                  size="small"
+                  value={
+                    filter.value && filter.value.length === 2
+                      ? [dayjs(filter.value[0]), dayjs(filter.value[1])]
+                      : null
+                  }
+                  onChange={(dates) => {
+                    if (dates && dates[0] && dates[1]) {
+                      handleFilterValueChange(filter.id, [
+                        dates[0].format('YYYY-MM-DD'),
+                        dates[1].format('YYYY-MM-DD'),
+                      ])
+                    } else {
+                      handleFilterValueChange(filter.id, null)
+                    }
+                  }}
+                />
+              ) : filter.type === 'text' ? (
+                <Input
+                  size="small"
+                  style={{ width: 140 }}
+                  placeholder={`搜索${filter.label}`}
+                  value={filter.value || ''}
+                  onChange={e => handleFilterValueChange(filter.id, e.target.value || null)}
+                  allowClear
+                />
+              ) : (
+                <Input
+                  size="small"
+                  style={{ width: 140 }}
+                  placeholder={`输入${filter.label}`}
+                  value={filter.value || ''}
+                  onChange={e => handleFilterValueChange(filter.id, e.target.value || null)}
+                  allowClear
+                />
+              )}
+              <Tag
+                closable
+                onClose={() => handleRemoveFilter(filter.id)}
+                style={{ margin: 0, cursor: 'pointer', fontSize: 11 }}
+                color="default"
+              />
+            </Space>
+          ))}
+        </div>
+      )}
 
       {/* 面板内容 */}
       <div ref={containerRef} style={{ padding: 16, minHeight: 300 }}>
@@ -254,6 +378,7 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
                     onUpdate={(w) => handleUpdateWidget(widget.id, w)}
                     onDelete={() => handleDeleteWidget(widget.id)}
                     onConfigDrawerChange={setConfigDrawerOpen}
+                    globalFilters={globalFilters}
                   />
                 ) : (
                   <ChartWidget
@@ -262,6 +387,7 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
                     onUpdate={(w) => handleUpdateWidget(widget.id, w)}
                     onDelete={() => handleDeleteWidget(widget.id)}
                     onConfigDrawerChange={setConfigDrawerOpen}
+                    globalFilters={globalFilters}
                   />
                 )}
               </div>
@@ -269,6 +395,50 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
           </GridLayout>
         )}
       </div>
+
+      {/* 添加全局过滤器 Modal */}
+      <Modal
+        title="添加全局过滤器"
+        open={addFilterModal.open}
+        onOk={handleAddFilter}
+        onCancel={() => setAddFilterModal(s => ({ ...s, open: false }))}
+        okText="添加"
+        cancelText="取消"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 8 }}>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>字段名</div>
+            <Input
+              placeholder="例如：status、created_at"
+              value={addFilterModal.field}
+              onChange={e => setAddFilterModal(s => ({ ...s, field: e.target.value }))}
+            />
+            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+              各 widget 会自动匹配同名字段，不存在的字段会被忽略
+            </div>
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>显示名称</div>
+            <Input
+              placeholder="例如：状态、创建时间"
+              value={addFilterModal.label}
+              onChange={e => setAddFilterModal(s => ({ ...s, label: e.target.value }))}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>过滤器类型</div>
+            <Select
+              style={{ width: '100%' }}
+              value={addFilterModal.type}
+              onChange={value => setAddFilterModal(s => ({ ...s, type: value }))}
+            >
+              <Option value="select">精确匹配</Option>
+              <Option value="text">文本搜索</Option>
+              <Option value="date_range">日期范围</Option>
+            </Select>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

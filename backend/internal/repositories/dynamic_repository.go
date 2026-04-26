@@ -276,6 +276,21 @@ func (r *dynamicRepository) Aggregate(tableName string, opts *AggregateOptions) 
 				return nil, fmt.Errorf("invalid metric field name: %s", m.Field)
 			}
 			selectParts = append(selectParts, fmt.Sprintf("AVG(%s) AS %s", m.Field, alias))
+		case "min":
+			if !isValidIdentifier(m.Field) {
+				return nil, fmt.Errorf("invalid metric field name: %s", m.Field)
+			}
+			selectParts = append(selectParts, fmt.Sprintf("MIN(%s) AS %s", m.Field, alias))
+		case "max":
+			if !isValidIdentifier(m.Field) {
+				return nil, fmt.Errorf("invalid metric field name: %s", m.Field)
+			}
+			selectParts = append(selectParts, fmt.Sprintf("MAX(%s) AS %s", m.Field, alias))
+		case "distinct":
+			if !isValidIdentifier(m.Field) {
+				return nil, fmt.Errorf("invalid metric field name: %s", m.Field)
+			}
+			selectParts = append(selectParts, fmt.Sprintf("COUNT(DISTINCT %s) AS %s", m.Field, alias))
 		default: // count
 			if m.Field != "" && isValidIdentifier(m.Field) {
 				selectParts = append(selectParts, fmt.Sprintf("COUNT(%s) AS %s", m.Field, alias))

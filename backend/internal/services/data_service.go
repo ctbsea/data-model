@@ -195,14 +195,16 @@ func (s *dataService) AggregateData(modelName string, req *AggregateRequest) ([]
 
 	// 校验 Metrics 字段类型
 	for _, m := range req.Metrics {
-		if (m.Func == "sum" || m.Func == "avg") && m.Field != "" {
-			ft, ok := fieldSet[m.Field]
-			if !ok {
-				return nil, fmt.Errorf("metric field '%s' not found in model", m.Field)
-			}
-			if ft != "number" {
-				return nil, fmt.Errorf("metric field '%s' must be number type for %s", m.Field, m.Func)
-			}
+		if m.Field == "" {
+			continue
+		}
+		ft, ok := fieldSet[m.Field]
+		if !ok {
+			return nil, fmt.Errorf("metric field '%s' not found in model", m.Field)
+		}
+		// sum/avg 只允许 number 类型；min/max/distinct 允许所有类型
+		if (m.Func == "sum" || m.Func == "avg") && ft != "number" {
+			return nil, fmt.Errorf("metric field '%s' must be number type for %s", m.Field, m.Func)
 		}
 	}
 
