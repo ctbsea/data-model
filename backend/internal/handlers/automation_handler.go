@@ -4,14 +4,17 @@ import (
 	"net/http"
 
 	"github.com/dmdp/platform/internal/models"
+	"github.com/dmdp/platform/internal/services"
 	"github.com/dmdp/platform/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
-type AutomationHandler struct{}
+type AutomationHandler struct {
+	engine services.AutomationEngine
+}
 
-func NewAutomationHandler() *AutomationHandler {
-	return &AutomationHandler{}
+func NewAutomationHandler(engine services.AutomationEngine) *AutomationHandler {
+	return &AutomationHandler{engine: engine}
 }
 
 // List 获取模型的自动化列表
@@ -169,5 +172,8 @@ func (h *AutomationHandler) ToggleEnable(c *gin.Context) {
 	}
 
 	utils.DB.First(&automation, "id = ?", id)
+	if h.engine != nil {
+		h.engine.ReloadAutomation(id)
+	}
 	c.JSON(http.StatusOK, automation)
 }

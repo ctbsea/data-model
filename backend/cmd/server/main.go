@@ -14,6 +14,7 @@ import (
 	"github.com/dmdp/platform/internal/config"
 	"github.com/dmdp/platform/internal/handlers"
 	"github.com/dmdp/platform/internal/middleware"
+	"github.com/dmdp/platform/internal/services"
 	"github.com/dmdp/platform/internal/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -45,6 +46,12 @@ func main() {
 	// 初始化默认数据
 	if err := bootstrap.InitDefaultData(); err != nil {
 		utils.Logger.Fatal(fmt.Sprintf("Failed to init default data: %v", err))
+	}
+
+	// 初始化自动化执行引擎
+	engine := services.NewAutomationEngine(utils.DB, cfg.SMTP)
+	if err := engine.Start(); err != nil {
+		utils.Logger.Warn(fmt.Sprintf("Automation engine start warning: %v", err))
 	}
 
 	// 初始化 JWT
@@ -135,7 +142,7 @@ func main() {
 	userHandler := handlers.NewUserHandler()
 	roleHandler := handlers.NewRoleHandler()
 	modelHandler := handlers.NewModelHandler()
-	dataHandler := handlers.NewDataHandler()
+	dataHandler := handlers.NewDataHandler(engine)
 	pageHandler := handlers.NewPageHandler()
 	workflowHandler := handlers.NewWorkflowHandler()
 	commentHandler := handlers.NewCommentHandler(utils.DB)
@@ -230,7 +237,7 @@ func main() {
 			}
 
 			// 自动化管理
-			automationHandler := handlers.NewAutomationHandler()
+			automationHandler := handlers.NewAutomationHandler(engine)
 			automations := protected.Group("/automations")
 			{
 				automations.GET("/model/:modelId", automationHandler.List)
@@ -336,6 +343,8 @@ func main() {
 	<-quit
 
 	utils.Logger.Info("Shutting down server...")
+
+	engine.Stop()
 
 	// 给5秒钟时间完成正在处理的请求
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

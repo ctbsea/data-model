@@ -58,13 +58,15 @@ type SortField struct {
 type dataService struct {
 	modelRepo   repositories.ModelRepository
 	dynamicRepo repositories.DynamicRepository
-	modelCache  []*models.Model // 模型缓存
+	modelCache  []*models.Model
+	engine      AutomationEngine
 }
 
-func NewDataService() DataService {
+func NewDataService(engine AutomationEngine) DataService {
 	return &dataService{
 		modelRepo:   repositories.NewModelRepository(),
 		dynamicRepo: repositories.NewDynamicRepository(),
+		engine:      engine,
 	}
 }
 
@@ -84,6 +86,12 @@ func (s *dataService) CreateData(modelName string, data map[string]interface{}) 
 	id, err := s.dynamicRepo.Create(model.TableName, data)
 	if err != nil {
 		return "", err
+	}
+
+	if s.engine != nil {
+		if fullData, err2 := s.dynamicRepo.GetByID(model.TableName, id); err2 == nil {
+			s.engine.TriggerEvent("record_create", modelName, id, fullData)
+		}
 	}
 
 	return id, nil
@@ -407,6 +415,12 @@ func (s *dataService) UpdateData(modelName, id string, data map[string]interface
 	// 记录变更日志
 	s.recordChangeLogs(modelName, id, oldData, data, userID)
 
+	if s.engine != nil {
+		if fullData, err2 := s.dynamicRepo.GetByID(model.TableName, id); err2 == nil {
+			s.engine.TriggerEvent("record_update", modelName, id, fullData)
+		}
+	}
+
 	return nil
 }
 
@@ -418,6 +432,10 @@ func (s *dataService) DeleteData(modelName, id string) error {
 
 	if err := s.dynamicRepo.Delete(model.TableName, id); err != nil {
 		return err
+	}
+
+	if s.engine != nil {
+		s.engine.TriggerEvent("record_delete", modelName, id, map[string]interface{}{"id": id})
 	}
 
 	return nil

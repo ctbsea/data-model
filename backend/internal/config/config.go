@@ -11,6 +11,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
+	SMTP     SMTPConfig     `mapstructure:"smtp"`
 }
 
 type ServerConfig struct {
@@ -45,6 +46,14 @@ type LogConfig struct {
 	Format   string `mapstructure:"format"`
 	Output   string `mapstructure:"output"`
 	FilePath string `mapstructure:"file_path"`
+}
+
+type SMTPConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	From     string `mapstructure:"from"`
 }
 
 var GlobalConfig *Config
