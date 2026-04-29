@@ -4,27 +4,17 @@ import dayjs from 'dayjs'
 import KanbanView from '../components/KanbanView'
 import RecordDetail from '../components/RecordDetail'
 import EmailModal from '../components/EmailModal'
-import { RecordFormModal } from './data/components/RecordFormModal'
 import { AutomationModal } from './data/components/AutomationModal'
-import { commentApi } from '../api/comment'
 import {
   message,
   Spin,
   Button,
   Space,
-  Drawer,
   Form,
-  Input,
-  InputNumber,
   Select,
-  Dropdown,
   Modal,
   Tag,
-  Checkbox,
-  Popover,
-  DatePicker,
   Radio,
-  Badge,
   Upload
 } from 'antd'
 import {
@@ -34,18 +24,12 @@ import {
   SortAscendingOutlined,
   DownloadOutlined,
   UploadOutlined,
-  SortDescendingOutlined,
-  GroupOutlined,
-  MoreOutlined,
   ClearOutlined,
   EditOutlined,
   ThunderboltOutlined,
-  ArrowLeftOutlined,
   SettingOutlined,
   LockOutlined,
   EyeInvisibleOutlined,
-  MailOutlined,
-  BellOutlined
 } from '@ant-design/icons'
 import { modelApi, Model, Field } from '../api/model'
 import { dataApi } from '../api/data'
@@ -57,32 +41,11 @@ import { useAuthStore } from '../stores/authStore'
 import {
   TableView,
   CalendarView,
-  AddRecordModal,
-  FilterModal,
-  getFieldIcon,
-  getFieldColor,
-  AddFieldPopover,
-  EditFieldDrawer,
   FieldModal,
   FieldConfigDrawer,
   RelationSelectModal,
-  AddRecordModalComponent,
   FilterModalComponent,
   SortModalComponent,
-  FieldEditor,
-  FieldDisplay,
-  useDataState,
-  useEditState,
-  useFilterSortState,
-  useViewState,
-  useTableState,
-  useRelationState,
-  createRecord,
-  updateRecord,
-  deleteRecord,
-  batchDeleteRecords,
-  exportToCSV,
-  importFromCSV
 } from './data/index'
 
 const { Option } = Select
@@ -118,7 +81,7 @@ const Data = () => {
   const [resizeStartX, setResizeStartX] = useState(0)
   const [resizeStartWidth, setResizeStartWidth] = useState(0)
   
-  // 从URL获取视图模式
+  // 浠嶶RL鑾峰彇瑙嗗浘妯″紡
   const getInitialViewMode = (): 'table' | 'kanban' | 'calendar' => {
     const view = searchParams.get('view')
     if (view === 'kanban' || view === 'calendar') return view
@@ -155,13 +118,13 @@ const Data = () => {
   const headerScrollRef = useRef<HTMLDivElement>(null)
   const bodyScrollRef = useRef<HTMLDivElement>(null)
   
-  // 邮件相关状态
+  // 閭欢鐩稿叧鐘舵€?
   const [emailModalVisible, setEmailModalVisible] = useState(false)
   const [currentEmail, setCurrentEmail] = useState<string>('')
   const [emailFilter, setEmailFilter] = useState<string | null>(null)
   const [unreadEmailCount, setUnreadEmailCount] = useState(0)
 
-  // 同步表头和数据行的水平滚动
+  // 鍚屾琛ㄥご鍜屾暟鎹鐨勬按骞虫粴鍔?
   const handleHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (bodyScrollRef.current) {
       bodyScrollRef.current.scrollLeft = e.currentTarget.scrollLeft
@@ -173,11 +136,10 @@ const Data = () => {
     }
   }
 
-  // 是否正在加载视图配置
+  // 鏄惁姝ｅ湪鍔犺浇瑙嗗浘閰嶇疆
   const [loadingConfig, setLoadingConfig] = useState(false)
-  const initRequestRef = useRef(false) // 防止重复初始化请求
-
-  // 获取未读邮件数量
+  const initRequestRef = useRef(false) // 闃叉閲嶅鍒濆鍖栬姹?
+  // 鑾峰彇鏈閭欢鏁伴噺
   const fetchUnreadCount = async () => {
     try {
       const res = await emailApi.getUnreadCount()
@@ -187,7 +149,7 @@ const Data = () => {
     }
   }
 
-  // 加载关联字段数据（分页）
+  // 鍔犺浇鍏宠仈瀛楁鏁版嵁锛堝垎椤碉級
   const loadRelationData = async (field: Field, page: number = 1, pageSize: number = 20) => {
     if (!field.relation_config) return
     
@@ -212,7 +174,7 @@ const Data = () => {
     }
   }
 
-  // 加载更多关联数据
+  // 鍔犺浇鏇村鍏宠仈鏁版嵁
   const loadMoreRelationData = async (field: Field) => {
     const currentPage = relationDataPage[field.name] || 1
     const total = relationDataTotal[field.name] || 0
@@ -222,19 +184,19 @@ const Data = () => {
     await loadRelationData(field, currentPage + 1, 20)
   }
 
-  // 加载模型和视图配置
+  // 鍔犺浇妯″瀷鍜岃鍥鹃厤缃?
   useEffect(() => {
     if (!modelName) return
     
     const init = async () => {
-      // 防止重复请求
+      // 闃叉閲嶅璇锋眰
       if (initRequestRef.current) return
       initRequestRef.current = true
       
       setLoading(true)
       setLoadingConfig(true)
       
-      // 重置状态
+      // 閲嶇疆鐘舵€?
       setModel(null)
       setFields([])
       setData([])
@@ -249,31 +211,31 @@ const Data = () => {
       setIsInitialLoad(true)
       
       try {
-        // 0. 加载用户列表
+        // 0. 鍔犺浇鐢ㄦ埛鍒楄〃
         const userRes = await userApi.list(1, 100)
         setUsers(userRes.users || [])
 
-        // 1. 获取模型列表
+        // 1. 鑾峰彇妯″瀷鍒楄〃
         const response = await modelApi.list(1, 100)
         setAllModels(response.models || [])
 
         const foundModel = response.models.find((m: Model) => m.name === modelName)
         if (!foundModel) {
-          message.error('模型不存在')
+          message.error('妯″瀷涓嶅瓨鍦?)
           return
         }
 
         setModel(foundModel)
-        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => a.order - b.order)
+        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => (a.order ?? 0) - (b.order ?? 0))
         setFields(sortedFields)
 
-        // 检查是否有 email 字段,有才获取未读邮件数量
+        // 妫€鏌ユ槸鍚︽湁 email 瀛楁,鏈夋墠鑾峰彇鏈閭欢鏁伴噺
         const hasEmailField = sortedFields.some((f: Field) => f.type === 'email')
         if (hasEmailField) {
           fetchUnreadCount()
         }
         
-        // 2. 加载视图配置
+        // 2. 鍔犺浇瑙嗗浘閰嶇疆
         let loadedFilters = {}
         let loadedSorts: any[] = []
         let loadedColumnWidths: Record<string, number> = {}
@@ -302,13 +264,13 @@ const Data = () => {
           console.error('Failed to load view config:', e)
         }
         
-        // 一次性设置所有状态
+        // 涓€娆℃€ц缃墍鏈夌姸鎬?
         setFilters(loadedFilters)
         setSorts(loadedSorts)
         setColumnWidths(loadedColumnWidths)
         setFrozenColumns(loadedFrozenColumns)
         if (loadedVisibleFields.length > 0) {
-          // 确保所有字段都在visibleFields中（处理新增字段的情况）
+          // 纭繚鎵€鏈夊瓧娈甸兘鍦╲isibleFields涓紙澶勭悊鏂板瀛楁鐨勬儏鍐碉級
           const allFieldIds = sortedFields.map(f => f.id!)
           const missingFieldIds = allFieldIds.filter(id => !loadedVisibleFields.includes(id))
           if (missingFieldIds.length > 0) {
@@ -320,14 +282,14 @@ const Data = () => {
           setVisibleFields(sortedFields.map(f => f.id!))
         }
         
-        // 3. 加载数据（后端会自动附加关联数据和评论统计）
+        // 3. 鍔犺浇鏁版嵁锛堝悗绔細鑷姩闄勫姞鍏宠仈鏁版嵁鍜岃瘎璁虹粺璁★級
         const dataRes = await dataApi.list(foundModel.name, 1, pageSize, loadedFilters, loadedSorts)
         setData(dataRes.data || [])
         setTotal(dataRes.total || 0)
         setPage(1)
         setHasMore((dataRes.data || []).length < (dataRes.total || 0))
         
-        // 从数据中提取评论统计
+        // 浠庢暟鎹腑鎻愬彇璇勮缁熻
         if (dataRes.data && dataRes.data.length > 0) {
           const counts: Record<string, number> = {}
           dataRes.data.forEach((row: any) => {
@@ -338,7 +300,7 @@ const Data = () => {
           setCommentCounts(counts)
         }
         
-        // 4. 如果是看板视图，自动设置分组字段
+        // 4. 濡傛灉鏄湅鏉胯鍥撅紝鑷姩璁剧疆鍒嗙粍瀛楁
         const currentViewMode = getInitialViewMode()
         if (currentViewMode === 'kanban') {
           const selectField = sortedFields.find(f => f.type === 'select' || f.type === 'multi_select')
@@ -347,7 +309,7 @@ const Data = () => {
           }
         }
         
-        // 5. 如果是日历视图，设置时间字段（优先使用保存的配置）
+        // 5. 濡傛灉鏄棩鍘嗚鍥撅紝璁剧疆鏃堕棿瀛楁锛堜紭鍏堜娇鐢ㄤ繚瀛樼殑閰嶇疆锛?
         if (currentViewMode === 'calendar') {
           if (loadedCalendarStart) {
             setCalendarStartField(loadedCalendarStart)
@@ -364,18 +326,18 @@ const Data = () => {
         setConfigLoaded(true)
         setIsInitialLoad(false)
       } catch (error: any) {
-        message.error(error.response?.data?.error || '加载失败')
+        message.error(error.response?.data?.error || '鍔犺浇澶辫触')
       } finally {
         setLoading(false)
         setLoadingConfig(false)
-        initRequestRef.current = false // 请求完成后重置锁
+        initRequestRef.current = false // 璇锋眰瀹屾垚鍚庨噸缃攣
       }
     }
     
     init()
   }, [modelName, viewMode])
 
-  // 当筛选、排序变化时重新加载数据
+  // 褰撶瓫閫夈€佹帓搴忓彉鍖栨椂閲嶆柊鍔犺浇鏁版嵁
   useEffect(() => {
     if (!model || loadingConfig || isInitialLoad) return
     
@@ -388,7 +350,7 @@ const Data = () => {
         setPage(1)
         setHasMore((dataRes.data || []).length < (dataRes.total || 0))
         
-        // 从数据中提取评论统计
+        // 浠庢暟鎹腑鎻愬彇璇勮缁熻
         if (dataRes.data && dataRes.data.length > 0) {
           const counts: Record<string, number> = {}
           dataRes.data.forEach((row: any) => {
@@ -399,7 +361,7 @@ const Data = () => {
           setCommentCounts(counts)
         }
       } catch (error: any) {
-        message.error(error.response?.data?.error || '加载数据失败')
+        message.error(error.response?.data?.error || '鍔犺浇鏁版嵁澶辫触')
       } finally {
         setLoading(false)
       }
@@ -408,20 +370,20 @@ const Data = () => {
     reloadData()
   }, [filters, sorts])
 
-  // 日历视图：当月份变化时重新加载数据
+  // 鏃ュ巻瑙嗗浘锛氬綋鏈堜唤鍙樺寲鏃堕噸鏂板姞杞芥暟鎹?
   useEffect(() => {
     if (!model || viewMode !== 'calendar' || !calendarStartField) return
     
     const loadCalendarData = async () => {
       setLoading(true)
       try {
-        // 计算当前月份的开始和结束日期
+        // 璁＄畻褰撳墠鏈堜唤鐨勫紑濮嬪拰缁撴潫鏃ユ湡
         const year = currentMonth.getFullYear()
         const month = currentMonth.getMonth()
         const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`
         const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`
         
-        // 构建日期范围筛选，使用后端支持的date_range条件
+        // 鏋勫缓鏃ユ湡鑼冨洿绛涢€夛紝浣跨敤鍚庣鏀寔鐨刣ate_range鏉′欢
         const calendarFilters = {
           ...filters,
           [calendarStartField]: {
@@ -431,12 +393,12 @@ const Data = () => {
           }
         }
         
-        // 使用日期范围筛选加载数据
+        // 浣跨敤鏃ユ湡鑼冨洿绛涢€夊姞杞芥暟鎹?
         const dataRes = await dataApi.list(model.name, 1, 100, calendarFilters, sorts)
         setData(dataRes.data || [])
         setTotal(dataRes.total || 0)
         
-        // 从数据中提取评论统计
+        // 浠庢暟鎹腑鎻愬彇璇勮缁熻
         if (dataRes.data && dataRes.data.length > 0) {
           const counts: Record<string, number> = {}
           dataRes.data.forEach((row: any) => {
@@ -456,7 +418,7 @@ const Data = () => {
     loadCalendarData()
   }, [model, viewMode, calendarStartField, currentMonth, filters, sorts])
 
-  // 加载更多数据
+  // 鍔犺浇鏇村鏁版嵁
   const loadMoreData = async () => {
     if (!model || loadingMore || !hasMore) return
     
@@ -465,12 +427,12 @@ const Data = () => {
       const nextPage = page + 1
       const dataRes = await dataApi.list(model.name, nextPage, pageSize, filters, sorts)
       
-      // 追加数据
+      // 杩藉姞鏁版嵁
       setData(prev => [...prev, ...(dataRes.data || [])])
       setPage(nextPage)
       setHasMore(data.length + (dataRes.data || []).length < (dataRes.total || 0))
       
-      // 追加评论统计
+      // 杩藉姞璇勮缁熻
       if (dataRes.data && dataRes.data.length > 0) {
         setCommentCounts(prev => {
           const newCounts = { ...prev }
@@ -483,13 +445,13 @@ const Data = () => {
         })
       }
     } catch (error: any) {
-      message.error(error.response?.data?.error || '加载更多失败')
+      message.error(error.response?.data?.error || '鍔犺浇鏇村澶辫触')
     } finally {
       setLoadingMore(false)
     }
   }
 
-  // 滚动加载更多
+  // 婊氬姩鍔犺浇鏇村
   const handleScrollLoadMore = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget
     const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
@@ -498,7 +460,7 @@ const Data = () => {
     }
   }
 
-  // 刷新模型数据
+  // 鍒锋柊妯″瀷鏁版嵁
   const fetchModel = async () => {
     if (!modelName) return
     try {
@@ -506,9 +468,9 @@ const Data = () => {
       const foundModel = response.models.find((m: Model) => m.name === modelName)
       if (foundModel) {
         setModel(foundModel)
-        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => a.order - b.order)
+        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => (a.order ?? 0) - (b.order ?? 0))
         setFields(sortedFields)
-        // 新添加的字段默认显示
+        // 鏂版坊鍔犵殑瀛楁榛樿鏄剧ず
         const newFieldIds = sortedFields.filter(f => !f.deleted).map(f => f.id!)
         setVisibleFields(newFieldIds)
       }
@@ -517,7 +479,7 @@ const Data = () => {
     }
   }
 
-  // 刷新数据
+  // 鍒锋柊鏁版嵁
   const fetchData = async () => {
     if (!model) return
     try {
@@ -535,14 +497,14 @@ const Data = () => {
     if (!model) return
 
     try {
-      // 处理选项数据
+      // 澶勭悊閫夐」鏁版嵁
       let optionsStr = '[]'
       if (values.options) {
         const optionsArray = values.options.split('\n').filter((s: string) => s.trim())
         optionsStr = JSON.stringify(optionsArray)
       }
 
-      // 处理关联配置
+      // 澶勭悊鍏宠仈閰嶇疆
       let relationConfigStr = ''
       if (values.type === 'relation') {
         const relationConfig = {
@@ -556,7 +518,7 @@ const Data = () => {
         relationConfigStr = JSON.stringify(relationConfig)
       }
 
-      // 添加字段到模型(用户级别)
+      // 娣诲姞瀛楁鍒版ā鍨?鐢ㄦ埛绾у埆)
       await modelApi.addField(model.id, {
         name: values.name || `field_${Date.now()}`,
         display_name: values.display_name,
@@ -568,15 +530,15 @@ const Data = () => {
         options: optionsStr,
         relation_config: relationConfigStr,
       })
-      message.success('字段添加成功')
+      message.success('瀛楁娣诲姞鎴愬姛')
       setAddFieldPopoverVisible(false)
       setDrawerVisible(false)
       fieldForm.resetFields()
       await fetchModel()
-      // 刷新数据以显示新字段
+      // 鍒锋柊鏁版嵁浠ユ樉绀烘柊瀛楁
       fetchData()
     } catch (error: any) {
-      message.error(error.response?.data?.error || '添加字段失败')
+      message.error(error.response?.data?.error || '娣诲姞瀛楁澶辫触')
     }
   }
 
@@ -589,17 +551,16 @@ const Data = () => {
       
       if (newIndex < 0 || newIndex >= newFields.length) return
       
-      // 交换字段顺序
+      // 浜ゆ崲瀛楁椤哄簭
       [newFields[index], newFields[newIndex]] = [newFields[newIndex], newFields[index]]
       
-      // 更新字段的order属性
+      // 鏇存柊瀛楁鐨刼rder灞炴€?
       const updatedFields = newFields.map((field, i) => ({
         ...field,
         order: i
       }))
       
-      // 逐个更新字段到后端
-      for (const field of updatedFields) {
+      // 閫愪釜鏇存柊瀛楁鍒板悗绔?      for (const field of updatedFields) {
         await modelApi.updateField(model.id, field.id!, {
           name: field.name,
           display_name: field.display_name,
@@ -614,12 +575,12 @@ const Data = () => {
         })
       }
       
-      message.success('字段顺序已更新')
-      // 重新获取模型数据,确保字段按order排序
+      message.success('瀛楁椤哄簭宸叉洿鏂?)
+      // 閲嶆柊鑾峰彇妯″瀷鏁版嵁,纭繚瀛楁鎸塷rder鎺掑簭
       await fetchModel()
       fetchData()
     } catch (error: any) {
-      message.error(error.response?.data?.error || '更新字段顺序失败')
+      message.error(error.response?.data?.error || '鏇存柊瀛楁椤哄簭澶辫触')
     }
   }
 
@@ -627,37 +588,37 @@ const Data = () => {
     setAddRecordModalVisible(true)
   }
 
-  // Excel模板下载
+  // Excel妯℃澘涓嬭浇
   const handleDownloadTemplate = () => {
     if (!model || !fields.length) return
     
-    // 创建CSV内容
+    // 鍒涘缓CSV鍐呭
     const visibleFieldsList = fields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')
     const headers = visibleFieldsList.map(f => f.display_name)
     const csvContent = headers.join(',') + '\n'
     
-    // 创建Blob并下载
+    // 鍒涘缓Blob骞朵笅杞?
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `${model.display_name}_导入模板.csv`
+    link.download = `${model.display_name}_瀵煎叆妯℃澘.csv`
     link.click()
     URL.revokeObjectURL(link.href)
-    message.success('模板下载成功')
+    message.success('妯℃澘涓嬭浇鎴愬姛')
   }
 
-  // 导出数据（按筛选条件）
+  // 瀵煎嚭鏁版嵁锛堟寜绛涢€夋潯浠讹級
   const handleExportData = () => {
     if (!model || !fields.length || !data.length) {
-      message.warning('暂无数据可导出')
+      message.warning('鏆傛棤鏁版嵁鍙鍑?)
       return
     }
     
-    // 获取可见字段
+    // 鑾峰彇鍙瀛楁
     const visibleFieldsList = fields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')
     const headers = visibleFieldsList.map(f => f.display_name)
     
-    // 构建CSV内容
+    // 鏋勫缓CSV鍐呭
     const rows = data.map(row => {
       return visibleFieldsList.map(field => {
         const value = row[field.name]
@@ -665,7 +626,7 @@ const Data = () => {
         
         let displayValue = value
         
-        // 处理用户字段
+        // 澶勭悊鐢ㄦ埛瀛楁
         if (field.type === 'user' && value) {
           const user = users.find((u: any) => u.id === value)
           if (user) {
@@ -673,7 +634,7 @@ const Data = () => {
           }
         }
         
-        // 处理关联字段
+        // 澶勭悊鍏宠仈瀛楁
         if (field.type === 'relation' && field.relation_config) {
           try {
             const config = JSON.parse(field.relation_config)
@@ -696,13 +657,13 @@ const Data = () => {
           } catch {}
         }
         
-        // 处理多选字段
+        // 澶勭悊澶氶€夊瓧娈?
         if (field.type === 'multi_select' && value) {
           const values = Array.isArray(value) ? value : String(value).split(',')
           displayValue = values.map((v: string) => v.trim()).join(', ')
         }
         
-        // 处理包含逗号或换行的值
+        // 澶勭悊鍖呭惈閫楀彿鎴栨崲琛岀殑鍊?
         const strValue = String(displayValue)
         if (strValue.includes(',') || strValue.includes('\n') || strValue.includes('"')) {
           return `"${strValue.replace(/"/g, '""')}"`
@@ -713,17 +674,17 @@ const Data = () => {
     
     const csvContent = headers.join(',') + '\n' + rows.join('\n')
     
-    // 创建Blob并下载
+    // 鍒涘缓Blob骞朵笅杞?
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `${model.display_name}_导出数据.csv`
+    link.download = `${model.display_name}_瀵煎嚭鏁版嵁.csv`
     link.click()
     URL.revokeObjectURL(link.href)
-    message.success(`成功导出 ${data.length} 条数据`)
+    message.success(`鎴愬姛瀵煎嚭 ${data.length} 鏉℃暟鎹甡)
   }
 
-  // Excel导入
+  // Excel瀵煎叆
   const handleImportExcel = async (file: File) => {
     if (!model) return false
     
@@ -732,21 +693,21 @@ const Data = () => {
       const lines = text.split('\n').filter(line => line.trim())
       
       if (lines.length < 2) {
-        message.error('文件内容为空或格式不正确')
+        message.error('鏂囦欢鍐呭涓虹┖鎴栨牸寮忎笉姝ｇ‘')
         return false
       }
       
-      // 解析表头
+      // 瑙ｆ瀽琛ㄥご
       const headers = lines[0].split(',').map(h => h.trim())
       const visibleFieldsList = fields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')
       
-      // 创建字段名映射
+      // 鍒涘缓瀛楁鍚嶆槧灏?
       const fieldMap: Record<string, Field> = {}
       visibleFieldsList.forEach(f => {
         fieldMap[f.display_name] = f
       })
       
-      // 解析数据行
+      // 瑙ｆ瀽鏁版嵁琛?
       const records: any[] = []
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',')
@@ -756,7 +717,7 @@ const Data = () => {
           const field = fieldMap[header]
           if (field && values[index] !== undefined) {
             let value = values[index].trim()
-            // 处理多选字段
+            // 澶勭悊澶氶€夊瓧娈?
             if (field.type === 'multi_select') {
               value = value.split(';').map(v => v.trim()).filter(Boolean).join(',')
             }
@@ -769,7 +730,7 @@ const Data = () => {
         }
       }
       
-      // 批量创建记录
+      // 鎵归噺鍒涘缓璁板綍
       let successCount = 0
       let failCount = 0
       for (const record of records) {
@@ -781,11 +742,11 @@ const Data = () => {
         }
       }
       
-      message.success(`导入完成: 成功 ${successCount} 条, 失败 ${failCount} 条`)
+      message.success(`瀵煎叆瀹屾垚: 鎴愬姛 ${successCount} 鏉? 澶辫触 ${failCount} 鏉)
       fetchData()
       return true
     } catch (error) {
-      message.error('导入失败,请检查文件格式')
+      message.error('瀵煎叆澶辫触,璇锋鏌ユ枃浠舵牸寮?)
       return false
     }
   }
@@ -794,7 +755,7 @@ const Data = () => {
     if (!model) return
     
     try {
-      // 处理日期字段
+      // 澶勭悊鏃ユ湡瀛楁
       const processedValues = { ...values }
       fields.forEach(field => {
         if (field.type === 'date' && processedValues[field.name]) {
@@ -803,26 +764,25 @@ const Data = () => {
       })
       
       const newRecord = await dataApi.create(model.name, processedValues)
-      message.success('添加成功')
+      message.success('娣诲姞鎴愬姛')
       setAddRecordModalVisible(false)
       addRecordForm.resetFields()
       
-      // 添加到本地数据
-      setData(prev => [newRecord, ...prev])
+      // 娣诲姞鍒版湰鍦版暟鎹?      setData(prev => [newRecord, ...prev])
       setTotal(prev => prev + 1)
     } catch (error: any) {
-      message.error(error.response?.data?.error || '添加失败')
+      message.error(error.response?.data?.error || '娣诲姞澶辫触')
     }
   }
 
   const handleUpdateCell = async (rowId: string, fieldName: string, value: any) => {
     if (!model) return
 
-    // 检查值是否发生变化
+    // 妫€鏌ュ€兼槸鍚﹀彂鐢熷彉鍖?
     const row = data.find(r => r.id === rowId)
     if (row) {
       const currentValue = row[fieldName]
-      // 处理数组比较
+      // 澶勭悊鏁扮粍姣旇緝
       if (Array.isArray(value) && Array.isArray(currentValue)) {
         if (value.length === currentValue.length && value.every(v => currentValue.includes(v))) {
           setEditingCell(null)
@@ -835,25 +795,25 @@ const Data = () => {
     }
 
     try {
-      // 处理多选值,转换为逗号分隔的字符串
+      // 澶勭悊澶氶€夊€?杞崲涓洪€楀彿鍒嗛殧鐨勫瓧绗︿覆
       let saveValue = value
       if (Array.isArray(value)) {
         saveValue = value.join(',')
       }
       
       await dataApi.update(model.name, rowId, { [fieldName]: saveValue })
-      message.success('保存成功')
+      message.success('淇濆瓨鎴愬姛')
       setEditingCell(null)
+      // 鏇存柊鏈湴鏁版嵁
       const field = fields.find(f => f.name === fieldName)
       if (field?.type === 'relation') {
         const updatedRecord = await dataApi.get(model.name, rowId)
         setData(prev => prev.map(r => r.id === rowId ? updatedRecord : r))
       } else {
-        // 更新本地数据
         setData(prev => prev.map(r => r.id === rowId ? { ...r, [fieldName]: saveValue } : r))
       }
     } catch (error: any) {
-      message.error(error.response?.data?.error || '保存失败')
+      message.error(error.response?.data?.error || '淇濆瓨澶辫触')
     }
   }
 
@@ -862,16 +822,16 @@ const Data = () => {
 
     try {
       await dataApi.delete(model.name, rowId)
-      message.success('记录删除成功')
-      // 更新本地数据
+      message.success('璁板綍鍒犻櫎鎴愬姛')
+      // 鏇存柊鏈湴鏁版嵁
       setData(prev => prev.filter(r => r.id !== rowId))
       setTotal(prev => prev - 1)
     } catch (error: any) {
-      message.error(error.response?.data?.error || '删除失败')
+      message.error(error.response?.data?.error || '鍒犻櫎澶辫触')
     }
   }
 
-  // 列宽调整相关函数
+  // 鍒楀璋冩暣鐩稿叧鍑芥暟
   const handleMouseDown = (e: React.MouseEvent, fieldId: string) => {
     e.preventDefault()
     e.stopPropagation()
@@ -914,10 +874,10 @@ const Data = () => {
     }
   }, [resizing, resizeStartX, resizeStartWidth])
 
-  // 当编辑字段时，设置表单值
+  // 褰撶紪杈戝瓧娈垫椂锛岃缃〃鍗曞€?
   useEffect(() => {
     if (currentField && drawerVisible) {
-      // 解析选项
+      // 瑙ｆ瀽閫夐」
       let optionsText = ''
       if (currentField.options) {
         try {
@@ -930,7 +890,7 @@ const Data = () => {
         }
       }
       
-      // 解析关联配置
+      // 瑙ｆ瀽鍏宠仈閰嶇疆
       let relationTargetModel = ''
       let relationType = 'one_to_many'
       let relationDisplayFields: string[] = []
@@ -957,11 +917,11 @@ const Data = () => {
     }
   }, [currentField, drawerVisible])
 
-  // 是否已加载配置（避免加载后立即触发保存）
+  // 鏄惁宸插姞杞介厤缃紙閬垮厤鍔犺浇鍚庣珛鍗宠Е鍙戜繚瀛橈級
   const [configLoaded, setConfigLoaded] = useState(false)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
 
-  // 当视图配置变化时保存（仅在配置加载完成后且不是初始加载时）
+  // 褰撹鍥鹃厤缃彉鍖栨椂淇濆瓨锛堜粎鍦ㄩ厤缃姞杞藉畬鎴愬悗涓斾笉鏄垵濮嬪姞杞芥椂锛?
   useEffect(() => {
     if (!model || !configLoaded || isInitialLoad) {
       return
@@ -994,7 +954,7 @@ const Data = () => {
       {
         key: 'edit',
         icon: <EditOutlined />,
-        label: '编辑字段',
+        label: '缂栬緫瀛楁',
         disabled: field.is_lock,
         onClick: () => {
           if (field.is_lock) return
@@ -1008,23 +968,23 @@ const Data = () => {
       {
         key: 'freeze',
         icon: <LockOutlined />,
-        label: frozenColumns > fieldIndex ? '取消冻结' : `冻结到此列`,
+        label: frozenColumns > fieldIndex ? '鍙栨秷鍐荤粨' : `鍐荤粨鍒版鍒梎,
         onClick: () => {
           if (frozenColumns > fieldIndex) {
             setFrozenColumns(fieldIndex)
           } else {
             setFrozenColumns(fieldIndex + 1)
           }
-          message.success(frozenColumns > fieldIndex ? '已取消冻结' : `已冻结前 ${fieldIndex + 1} 列`)
+          message.success(frozenColumns > fieldIndex ? '宸插彇娑堝喕缁? : `宸插喕缁撳墠 ${fieldIndex + 1} 鍒梎)
         },
       },
       {
         key: 'hide',
         icon: <EyeInvisibleOutlined />,
-        label: '隐藏字段',
+        label: '闅愯棌瀛楁',
         onClick: () => {
           setVisibleFields(visibleFields.filter(id => id !== field.id))
-          message.success('字段已隐藏')
+          message.success('瀛楁宸查殣钘?)
         },
       },
       {
@@ -1033,26 +993,26 @@ const Data = () => {
       {
         key: 'delete',
         icon: <DeleteOutlined />,
-        label: '删除字段',
+        label: '鍒犻櫎瀛楁',
         danger: true,
         disabled: field.is_lock,
         onClick: () => {
           if (field.is_lock) return
           Modal.confirm({
-            title: '确认删除',
-            content: `确定要删除字段 "${field.display_name}" 吗?字段将被移至回收站，可以恢复。`,
+            title: '纭鍒犻櫎',
+            content: `纭畾瑕佸垹闄ゅ瓧娈?"${field.display_name}" 鍚?瀛楁灏嗚绉昏嚦鍥炴敹绔欙紝鍙互鎭㈠銆俙,
             onOk: async () => {
               if (!model) return
               try {
-                // 标记字段为已删除，而不是真正删除
+                // 鏍囪瀛楁涓哄凡鍒犻櫎锛岃€屼笉鏄湡姝ｅ垹闄?
                 await modelApi.updateField(model.id, field.id!, {
                   ...field,
                   deleted: true
                 })
-                message.success('字段已移至回收站')
+                message.success('瀛楁宸茬Щ鑷冲洖鏀剁珯')
                 fetchModel()
               } catch (error: any) {
-                message.error(error.response?.data?.error || '删除失败')
+                message.error(error.response?.data?.error || '鍒犻櫎澶辫触')
               }
             },
           })
@@ -1072,8 +1032,8 @@ const Data = () => {
   if (!model) {
     return (
       <div style={{ textAlign: 'center', padding: 100 }}>
-        <div>模型不存在</div>
-        <Button onClick={() => navigate('/model-list')}>返回模型列表</Button>
+        <div>妯″瀷涓嶅瓨鍦?/div>
+        <Button onClick={() => navigate('/model-list')}>杩斿洖妯″瀷鍒楄〃</Button>
       </div>
     )
   }
@@ -1086,7 +1046,7 @@ const Data = () => {
         }
       `}</style>
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
-      {/* 顶部工具栏 */}
+      {/* 椤堕儴宸ュ叿鏍?*/}
       <div style={{
         padding: '12px 24px',
         background: '#fff',
@@ -1098,7 +1058,7 @@ const Data = () => {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <h2 style={{ margin: 0 }}>{model.display_name}</h2>
-          <Tag color="blue">{total} 条记录</Tag>
+          <Tag color="blue">{total} 鏉¤褰?/Tag>
         </div>
         
         <Space>
@@ -1107,7 +1067,7 @@ const Data = () => {
             onChange={async (e) => {
               const value = e.target.value
               setViewMode(value)
-              // 更新URL
+              // 鏇存柊URL
               const url = new URL(window.location.href)
               if (value === 'table') {
                 url.searchParams.delete('view')
@@ -1115,14 +1075,14 @@ const Data = () => {
                 url.searchParams.set('view', value)
               }
               window.history.replaceState({}, '', url.toString())
-              // 切换到看板视图时,自动选择第一个单选/多选字段
+              // 鍒囨崲鍒扮湅鏉胯鍥炬椂,鑷姩閫夋嫨绗竴涓崟閫?澶氶€夊瓧娈?
               if (value === 'kanban' && !kanbanField) {
                 const selectField = fields.find(f => f.type === 'select' || f.type === 'multi_select')
                 if (selectField) {
                   setKanbanField(selectField.name)
                 }
               }
-              // 切换到日历视图时,加载日历视图配置
+              // 鍒囨崲鍒版棩鍘嗚鍥炬椂,鍔犺浇鏃ュ巻瑙嗗浘閰嶇疆
               if (value === 'calendar' && model) {
                 try {
                   const config = await viewConfigApi.get(model.name, 'calendar')
@@ -1131,7 +1091,7 @@ const Data = () => {
                       setCalendarStartField(config.calendar_start)
                       setCalendarEndField(config.calendar_end || config.calendar_start)
                     } else {
-                      // 没有保存的配置,使用默认值
+                      // 娌℃湁淇濆瓨鐨勯厤缃?浣跨敤榛樿鍊?
                       const dateField = fields.find(f => f.type === 'date')
                       if (dateField) {
                         setCalendarStartField(dateField.name)
@@ -1147,13 +1107,13 @@ const Data = () => {
             optionType="button"
             buttonStyle="solid"
           >
-            <Radio.Button value="table">表格</Radio.Button>
-            <Radio.Button value="kanban">看板</Radio.Button>
-            <Radio.Button value="calendar">日历</Radio.Button>
+            <Radio.Button value="table">琛ㄦ牸</Radio.Button>
+            <Radio.Button value="kanban">鐪嬫澘</Radio.Button>
+            <Radio.Button value="calendar">鏃ュ巻</Radio.Button>
           </Radio.Group>
           {viewMode === 'kanban' && (
             <Select
-              placeholder="选择分组字段"
+              placeholder="閫夋嫨鍒嗙粍瀛楁"
               value={kanbanField}
               onChange={(value) => setKanbanField(value)}
               style={{ width: 150 }}
@@ -1166,11 +1126,11 @@ const Data = () => {
           {viewMode === 'calendar' && (
             <>
               <Select
-                placeholder="选择时间字段"
+                placeholder="閫夋嫨鏃堕棿瀛楁"
                 value={calendarStartField}
                 onChange={(value) => {
                   setCalendarStartField(value)
-                  // 单时间字段时，结束时间也设为相同字段
+                  // 鍗曟椂闂村瓧娈垫椂锛岀粨鏉熸椂闂翠篃璁句负鐩稿悓瀛楁
                   if (!calendarEndField) {
                     setCalendarEndField(value)
                   }
@@ -1182,7 +1142,7 @@ const Data = () => {
                 ))}
               </Select>
               <Select
-                placeholder="结束时间字段(可选)"
+                placeholder="缁撴潫鏃堕棿瀛楁(鍙€?"
                 value={calendarEndField}
                 onChange={(value) => setCalendarEndField(value)}
                 style={{ width: 150 }}
@@ -1199,14 +1159,14 @@ const Data = () => {
             onClick={() => setFilterVisible(true)}
             type={Object.keys(filters).length > 0 ? 'primary' : 'default'}
           >
-            筛选 {Object.keys(filters).length > 0 && `(${Object.keys(filters).length})`}
+            绛涢€?{Object.keys(filters).length > 0 && `(${Object.keys(filters).length})`}
           </Button>
           <Button 
             icon={<SortAscendingOutlined />}
             onClick={() => setSortVisible(true)}
             type={sorts.length > 0 ? 'primary' : 'default'}
           >
-            排序 {sorts.length > 0 && `(${sorts.length})`}
+            鎺掑簭 {sorts.length > 0 && `(${sorts.length})`}
           </Button>
           {(Object.keys(filters).length > 0 || sorts.length > 0) && (
             <Button 
@@ -1214,28 +1174,28 @@ const Data = () => {
               onClick={() => {
                 setFilters({})
                 setSorts([])
-                message.success('已重置筛选和排序')
+                message.success('宸查噸缃瓫閫夊拰鎺掑簭')
               }}
             >
-              重置
+              閲嶇疆
             </Button>
           )}
           <Button 
             icon={<SettingOutlined />}
             onClick={() => setFieldConfigVisible(true)}
           >
-            字段配置
+            瀛楁閰嶇疆
           </Button>
           <Button 
             icon={<PlusOutlined />}
             onClick={() => setAddFieldPopoverVisible(true)}
           >
-            添加字段
+            娣诲姞瀛楁
           </Button>
         </Space>
       </div>
 
-      {/* 看板视图 */}
+      {/* 鐪嬫澘瑙嗗浘 */}
       {viewMode === 'kanban' && kanbanField && (
         <KanbanView
           model={model}
@@ -1247,7 +1207,7 @@ const Data = () => {
           relationData={relationData}
           allModels={allModels}
           onDataChange={() => {
-            // 重新加载数据
+            // 閲嶆柊鍔犺浇鏁版嵁
             const reloadData = async () => {
               if (!model) return
               try {
@@ -1257,7 +1217,7 @@ const Data = () => {
                 setPage(1)
                 setHasMore((dataRes.data || []).length < (dataRes.total || 0))
                 
-                // 更新评论统计
+                // 鏇存柊璇勮缁熻
                 if (dataRes.data && dataRes.data.length > 0) {
                   const counts: Record<string, number> = {}
                   dataRes.data.forEach((row: any) => {
@@ -1276,7 +1236,7 @@ const Data = () => {
         />
       )}
 
-      {/* 日历视图 */}
+      {/* 鏃ュ巻瑙嗗浘 */}
       {viewMode === 'calendar' && calendarStartField && (
         <CalendarView
           model={model}
@@ -1295,16 +1255,16 @@ const Data = () => {
         />
       )}
 
-      {/* 数据表格 */}
+      {/* 鏁版嵁琛ㄦ牸 */}
       {viewMode === 'table' && (
         <>
-          {/* 表格工具栏 */}
+          {/* 琛ㄦ牸宸ュ叿鏍?*/}
           <div style={{ padding: '8px 24px', background: '#fff', borderBottom: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Button 
               icon={<DownloadOutlined />}
               onClick={handleDownloadTemplate}
             >
-              下载模板
+              涓嬭浇妯℃澘
             </Button>
             <Upload
               accept=".csv"
@@ -1314,21 +1274,20 @@ const Data = () => {
                 return false
               }}
             >
-              <Button icon={<UploadOutlined />}>导入数据</Button>
+              <Button icon={<UploadOutlined />}>瀵煎叆鏁版嵁</Button>
             </Upload>
             <Button icon={<DownloadOutlined />}
               onClick={handleExportData}
             >
-              导出数据
+              瀵煎嚭鏁版嵁
             </Button>
             <Button
               icon={<ThunderboltOutlined />}
               onClick={() => setAutomationModalVisible(true)}
             >
-              自动化
-            </Button>
+              鑷姩鍖?            </Button>
             {Object.keys(filters).length > 0 && (
-              <Tag color="blue">已应用筛选条件</Tag>
+              <Tag color="blue">宸插簲鐢ㄧ瓫閫夋潯浠?/Tag>
             )}
           </div>
           <TableView
@@ -1387,10 +1346,10 @@ const Data = () => {
               if (fieldIndex >= 0) {
                 if (frozenColumns > fieldIndex) {
                   setFrozenColumns(fieldIndex)
-                  message.success('已取消冻结')
+                  message.success('宸插彇娑堝喕缁?)
                 } else {
                   setFrozenColumns(fieldIndex + 1)
-                  message.success(`已冻结前 ${fieldIndex + 1} 列`)
+                  message.success(`宸插喕缁撳墠 ${fieldIndex + 1} 鍒梎)
                 }
               }
             }
@@ -1411,7 +1370,7 @@ const Data = () => {
         </>
       )}
 
-      {/* 添加记录 - 复用 RecordDetail */}
+      {/* 娣诲姞璁板綍 - 澶嶇敤 RecordDetail */}
       <RecordDetail
         visible={addRecordModalVisible}
         record={null}
@@ -1425,7 +1384,7 @@ const Data = () => {
         }}
       />
 
-      {/* 筛选Modal */}
+      {/* 绛涢€塎odal */}
       <FilterModalComponent
         visible={filterVisible}
         fields={fields}
@@ -1440,7 +1399,7 @@ const Data = () => {
         onClose={() => setFilterVisible(false)}
       />
 
-      {/* 排序Modal */}
+      {/* 鎺掑簭Modal */}
       <SortModalComponent
         visible={sortVisible}
         fields={fields}
@@ -1453,7 +1412,7 @@ const Data = () => {
         onClose={() => setSortVisible(false)}
       />
 
-      {/* 添加字段Modal */}
+      {/* 娣诲姞瀛楁Modal */}
       <FieldModal
         model={model}
         field={null}
@@ -1466,7 +1425,7 @@ const Data = () => {
         fields={fields}
       />
 
-      {/* 编辑字段Modal */}
+      {/* 缂栬緫瀛楁Modal */}
       <FieldModal
         model={model}
         field={currentField}
@@ -1478,7 +1437,7 @@ const Data = () => {
         onSuccess={fetchModel}
       />
 
-      {/* 关联字段选择Modal */}
+      {/* 鍏宠仈瀛楁閫夋嫨Modal */}
       <RelationSelectModal
         visible={relationModalVisible}
         field={currentRelationField}
@@ -1503,7 +1462,7 @@ const Data = () => {
         onLoadMore={loadMoreRelationData}
       />
 
-      {/* 字段配置Drawer */}
+      {/* 瀛楁閰嶇疆Drawer */}
       <FieldConfigDrawer
         visible={fieldConfigVisible}
         onClose={() => setFieldConfigVisible(false)}
@@ -1513,7 +1472,7 @@ const Data = () => {
         onMoveField={handleMoveField}
       />
 
-      {/* 记录详情 */}
+      {/* 璁板綍璇︽儏 */}
       <RecordDetail
         visible={recordDetailVisible}
         record={currentRecord}
@@ -1528,7 +1487,7 @@ const Data = () => {
         }}
       />
 
-      {/* 邮件Modal */}
+      {/* 閭欢Modal */}
       <EmailModal
         visible={emailModalVisible}
         email={currentEmail}
@@ -1536,7 +1495,7 @@ const Data = () => {
         onFilterChange={(email) => {
           setEmailFilter(email)
           if (email) {
-            // 找到email字段并设置筛选
+            // 鎵惧埌email瀛楁骞惰缃瓫閫?
             const emailField = fields.find(f => f.type === 'email')
             if (emailField) {
               setFilters({
@@ -1548,20 +1507,20 @@ const Data = () => {
               })
             }
           } else {
-            // 清除email筛选
+            // 娓呴櫎email绛涢€?
             const emailField = fields.find(f => f.type === 'email')
             if (emailField) {
               const newFilters = { ...filters }
               delete newFilters[emailField.name]
               setFilters(newFilters)
             }
-            // 清空当前邮件
+            // 娓呯┖褰撳墠閭欢
             setCurrentEmail('')
           }
         }}
       />
 
-      {/* 自动化Modal */}
+      {/* 鑷姩鍖朚odal */}
       <AutomationModal
         visible={automationModalVisible}
         modelId={model?.id || ''}

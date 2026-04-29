@@ -60,6 +60,35 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
         />
       )
 
+    case 'currency':
+      let currencyCode = 'CNY'
+      try {
+        const config = field.options ? JSON.parse(field.options) : {}
+        currencyCode = config.currency || currencyCode
+      } catch {
+        // ignore invalid config
+      }
+      return (
+        <InputNumber
+          min={0}
+          value={value}
+          onChange={onChange}
+          addonBefore={currencyCode}
+          style={{ width: '100%', ...style }}
+          placeholder={`杈撳叆${field.display_name}`}
+        />
+      )
+
+    case 'country':
+      return (
+        <Input
+          value={value || ''}
+          onChange={e => onChange(e.target.value)}
+          style={style}
+          placeholder={`杈撳叆${field.display_name}`}
+        />
+      )
+
     case 'select':
       const options = field.options ? JSON.parse(field.options) : []
       return (
@@ -242,7 +271,7 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
       
       return (
         <Select
-          mode={config.allow_multiple ? 'multiple' : undefined}
+          mode={config.allow_multiple ? 'multiple' as const : undefined}
           value={value}
           onChange={onChange}
           style={{ width: '100%', ...style }}
@@ -250,7 +279,7 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
           allowClear
           showSearch
           filterOption={(input, option) => 
-            String(option.children).toLowerCase().includes(input.toLowerCase())
+            String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
           }
         >
           {relationData.map((item: any) => (

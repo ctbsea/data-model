@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { 
   Drawer, 
   Form, 
   Input, 
+  InputNumber,
   Select, 
   DatePicker, 
   Button, 
@@ -27,11 +28,19 @@ import { Field, Model, modelApi } from '../api/model'
 import { userApi } from '../api/user'
 import { dataApi } from '../api/data'
 import { commentApi, Comment as CommentType } from '../api/comment'
+import { dictionaryApi, DictionaryItem } from '../api/dictionary'
 import HistoryDrawer from './HistoryDrawer'
 import dayjs from 'dayjs'
 
 const { Option } = Select
 const { TextArea } = Input
+
+const getFileUrl = (url: string) => {
+  if (!url) return url
+  if (/^https?:\/\//i.test(url)) return url
+  const apiBase = (import.meta as any).env?.VITE_API_URL || ''
+  return apiBase ? `${apiBase}${url}` : url
+}
 
 interface RecordDetailProps {
   visible: boolean
@@ -58,9 +67,11 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
   const [relationData, setRelationData] = useState<Record<string, any[]>>({})
   const [allModels, setAllModels] = useState<Model[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
+  const [countries, setCountries] = useState<DictionaryItem[]>([])
   const [historyVisible, setHistoryVisible] = useState(false)
 
-  // 加载评论
+  // 鍔犺浇璇勮
   const loadComments = async () => {
     if (!model || !record) return
     try {
@@ -73,7 +84,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
 
   useEffect(() => {
     if (visible && record && model) {
-      // 填充表单数据
+      // 濉厖琛ㄥ崟鏁版嵁
       const formValues: any = {}
       fields.forEach(field => {
         if ((field.type === 'date' || field.type === 'datetime') && record[field.name]) {
@@ -85,10 +96,10 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       })
       form.setFieldsValue(formValues)
       
-      // 加载评论
+      // 鍔犺浇璇勮
       loadComments()
       
-      // 加载用户数据
+      // 鍔犺浇鐢ㄦ埛鏁版嵁
       const loadUsers = async () => {
         try {
           const userRes = await userApi.list(1, 100)
@@ -98,6 +109,9 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
         }
       }
       loadUsers()
+
+      dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
+      dictionaryApi.list('country').then(res => setCountries(res.items || [])).catch(console.error)
     }
   }, [visible, record, fields, model])
 
@@ -125,7 +139,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       }
     }
     
-    // 只在弹窗可见时才加载
+    // 鍙湪寮圭獥鍙鏃舵墠鍔犺浇
     if (visible && fields.length > 0) {
       loadData()
     }
@@ -138,17 +152,17 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       setSaving(true)
       const values = await form.validateFields()
       
-      // 处理字段类型转换
+      // 澶勭悊瀛楁绫诲瀷杞崲
       const submitData: any = {}
       Object.keys(values).forEach(key => {
         const field = fields.find(f => f.name === key)
         const value = values[key]
         
         if (dayjs.isDayjs(value)) {
-          // 日期字段
+          // 鏃ユ湡瀛楁
           submitData[key] = value.format('YYYY-MM-DD')
-        } else if (field?.type === 'number' && value !== undefined && value !== null && value !== '') {
-          // 数字字段：转换为数字类型
+        } else if ((field?.type === 'number' || field?.type === 'currency') && value !== undefined && value !== null && value !== '') {
+          // 鏁板瓧瀛楁锛氳浆鎹负鏁板瓧绫诲瀷
           submitData[key] = Number(value)
         } else {
           submitData[key] = value
@@ -156,20 +170,20 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       })
       
       if (record) {
-        // 编辑模式
+        // 缂栬緫妯″紡
         await dataApi.update(model.name, record.id, submitData)
-        message.success('保存成功')
+        message.success('淇濆瓨鎴愬姛')
       } else {
-        // 添加模式
+        // 娣诲姞妯″紡
         await dataApi.create(model.name, submitData)
-        message.success('添加成功')
+        message.success('娣诲姞鎴愬姛')
       }
       onUpdate()
       if (!record) {
-        onClose() // 添加成功后关闭
+        onClose()
       }
     } catch (error: any) {
-      message.error(error.response?.data?.error || '保存失败')
+      message.error(error.response?.data?.error || '淇濆瓨澶辫触')
     } finally {
       setSaving(false)
     }
@@ -188,7 +202,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       loadComments()
       message.success('评论已添加')
     } catch (error) {
-      message.error('添加评论失败')
+      message.error('娣诲姞璇勮澶辫触')
     }
   }
 
@@ -230,14 +244,14 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
     const iconMap: Record<string, string> = {
       text: 'A',
       number: '#',
-      select: '○',
+      select: '●',
       multi_select: '◉',
       date: '📅',
-      boolean: '✓',
+      boolean: '☑',
       email: '@',
       url: '🔗',
       user: '👤',
-      relation: '🔗',
+      relation: '↔',
       attachment: '📎',
     }
     return iconMap[type] || 'A'
@@ -248,7 +262,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       let options: any[] = []
       try {
         let parsed = JSON.parse(field.options || '[]')
-        // 处理双重编码
+        // 澶勭悊鍙岄噸缂栫爜
         if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
           parsed = JSON.parse(parsed[0])
         }
@@ -261,7 +275,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       return (
         <Select
           mode={field.type === 'multi_select' ? 'multiple' : undefined}
-          placeholder={`请选择${field.display_name}`}
+          placeholder={`璇烽€夋嫨${field.display_name}`}
           style={{ width: '100%' }}
         >
           {hasColorConfig ? (
@@ -278,11 +292,11 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
     }
     
     if (field.type === 'date') {
-      return <DatePicker style={{ width: '100%' }} placeholder="选择日期" />
+      return <DatePicker style={{ width: '100%' }} placeholder="閫夋嫨鏃ユ湡" />
     }
     
     if (field.type === 'datetime') {
-      return <DatePicker showTime style={{ width: '100%' }} placeholder="选择日期时间" />
+      return <DatePicker showTime style={{ width: '100%' }} placeholder="閫夋嫨鏃ユ湡鏃堕棿" />
     }
     
     if (field.type === 'boolean') {
@@ -295,20 +309,50 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
     }
     
     if (field.type === 'number') {
-      return <Input type="number" placeholder={`请输入${field.display_name}`} />
+      return <Input type="number" placeholder={`璇疯緭鍏?{field.display_name}`} />
+    }
+
+    if (field.type === 'currency') {
+      let code = 'CNY'
+      try {
+        const config = field.options ? JSON.parse(field.options) : {}
+        code = config.currency || code
+      } catch {
+        // ignore invalid config
+      }
+      const currency = currencies.find(item => item.code === code)
+      return <InputNumber style={{ width: '100%' }} min={0} addonBefore={currency?.symbol || code} placeholder={`璇疯緭鍏?{field.display_name}`} />
+    }
+
+    if (field.type === 'country') {
+      return (
+        <Select
+          showSearch
+          placeholder="请选择国家"
+          style={{ width: '100%' }}
+          filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+        >
+          {countries.map(country => (
+            <Option key={country.code} value={country.code} label={`${country.name_zh || country.name} ${country.name_en || ''}`}>
+              {country.icon} {country.name_zh || country.name} / {country.name_en}
+            </Option>
+          ))}
+        </Select>
+      )
     }
     
     if (field.type === 'file' || field.type === 'image') {
       return (
         <Upload
           action="/api/upload"
+          headers={{ Authorization: `Bearer ${localStorage.getItem('token') || ''}` }}
           name="file"
           showUploadList={false}
-          onSuccess={(response: any) => {
+          onChange={({ file }: any) => { if (file.status !== 'done') return; const response = file.response
             form.setFieldsValue({ [field.name]: response.url })
           }}
         >
-          <Button icon={<PaperClipOutlined />}>上传{field.type === 'image' ? '图片' : '文件'}</Button>
+          <Button icon={<PaperClipOutlined />}>涓婁紶{field.type === 'image' ? '鍥剧墖' : '鏂囦欢'}</Button>
         </Upload>
       )
     }
@@ -316,11 +360,11 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
     if (field.type === 'user') {
       return (
         <Select
-          placeholder={`请选择${field.display_name}`}
+          placeholder={`璇烽€夋嫨${field.display_name}`}
           style={{ width: '100%' }}
           showSearch
           filterOption={(input, option) =>
-            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+            String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
           }
         >
           {users.map(user => (
@@ -341,11 +385,11 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       return (
         <Select
           mode={allowMultiple ? 'multiple' : undefined}
-          placeholder="+ 选择记录"
+          placeholder="+ 閫夋嫨璁板綍"
           style={{ width: '100%' }}
           showSearch
           filterOption={(input, option) =>
-            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+            String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
           }
         >
           {records.map((rec: any) => {
@@ -363,7 +407,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       )
     }
     
-    return <Input placeholder={`请输入${field.display_name}`} />
+    return <Input placeholder={`璇疯緭鍏?{field.display_name}`} />
   }
 
   return (
@@ -375,14 +419,14 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
       bodyStyle={{ padding: 0 }}
     >
       <div style={{ display: 'flex', height: '100%' }}>
-        {/* 左侧表单区域 */}
+        {/* 宸︿晶琛ㄥ崟鍖哄煙 */}
         <div style={{ 
           flex: 1, 
           padding: 24, 
           overflow: 'auto',
           borderRight: '1px solid #f0f0f0'
         }}>
-          {/* 顶部标题栏 */}
+          {/* 椤堕儴鏍囬鏍?*/}
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
@@ -392,7 +436,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Button type="text" icon={<LeftOutlined />} onClick={onClose} />
               <span style={{ fontSize: 16, fontWeight: 500 }}>
-                {record ? '编辑记录' : '添加记录'}
+                {record ? '缂栬緫璁板綍' : '娣诲姞璁板綍'}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -433,20 +477,20 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
             </div>
           </div>
 
-          {/* 表单内容 */}
+          {/* 琛ㄥ崟鍐呭 */}
           <Form form={form} layout="vertical">
             {fields.map(field => renderFormField(field))}
           </Form>
 
-          {/* 保存按钮 */}
+          {/* 淇濆瓨鎸夐挳 */}
           <div style={{ marginTop: 24 }}>
             <Button type="primary" onClick={handleSave} loading={saving}>
-              {record ? '保存' : '添加'}
+              {record ? '淇濆瓨' : '娣诲姞'}
             </Button>
           </div>
         </div>
 
-        {/* 右侧评论区 */}
+        {/* 鍙充晶璇勮鍖?*/}
         <div style={{ 
           width: commentCollapsed ? 0 : 300, 
           overflow: 'hidden',
@@ -456,7 +500,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
           position: 'relative',
           background: '#fff',
         }}>
-          {/* 评论收起/展开按钮 */}
+          {/* 璇勮鏀惰捣/灞曞紑鎸夐挳 */}
           <div 
             style={{ 
               position: 'absolute',
@@ -477,18 +521,18 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
 
           {!commentCollapsed && (
             <>
-              {/* 评论标题 */}
+              {/* 璇勮鏍囬 */}
               <div style={{ 
                 padding: '16px 24px', 
                 borderBottom: '1px solid #f0f0f0',
               }}>
-                <span style={{ fontWeight: 500, fontSize: 16 }}>评论</span>
+                <span style={{ fontWeight: 500, fontSize: 16 }}>璇勮</span>
               </div>
 
-              {/* 评论列表 */}
+              {/* 璇勮鍒楄〃 */}
               <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
                 {comments.map(comment => {
-                  const isMyComment = comment.user_id === '1' // 假设当前用户ID为1
+                  const isMyComment = comment.user_id === '1' // 鍋囪褰撳墠鐢ㄦ埛ID涓?
                   return (
                     <div key={comment.id} style={{ 
                       marginBottom: 16,
@@ -530,7 +574,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
                 })}
               </div>
 
-              {/* 评论输入 */}
+              {/* 璇勮杈撳叆 */}
               <div style={{ 
                 padding: 16, 
                 borderTop: '1px solid #f0f0f0',
@@ -539,13 +583,12 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
                 <TextArea
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="添加评论..."
+                  placeholder="娣诲姞璇勮..."
                   autoSize={{ minRows: 2, maxRows: 4 }}
                 />
                 <div style={{ marginTop: 8, textAlign: 'right' }}>
                   <Button type="primary" size="small" onClick={handleAddComment}>
-                    发送
-                  </Button>
+                    鍙戦€?                  </Button>
                 </div>
               </div>
             </>
@@ -553,7 +596,7 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
         </div>
       </div>
       
-      {/* 历史记录抽屉 */}
+      {/* 鍘嗗彶璁板綍鎶藉眽 */}
       <HistoryDrawer
         visible={historyVisible}
         modelName={model?.name || ''}
@@ -565,3 +608,5 @@ const RecordDetail: React.FC<RecordDetailProps> = ({
 }
 
 export default RecordDetail
+
+

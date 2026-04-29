@@ -28,6 +28,10 @@ func InitDefaultData() error {
 		return fmt.Errorf("failed to init default permissions: %w", err)
 	}
 
+	if err := initDefaultDictionaries(); err != nil {
+		return fmt.Errorf("failed to init default dictionaries: %w", err)
+	}
+
 	return nil
 }
 
@@ -169,26 +173,26 @@ func initDefaultPermissions() error {
 		{Name: "user_create", DisplayName: "创建用户", Resource: "user", Action: "create"},
 		{Name: "user_update", DisplayName: "编辑用户", Resource: "user", Action: "update"},
 		{Name: "user_delete", DisplayName: "删除用户", Resource: "user", Action: "delete"},
-		
+
 		// 角色管理权限
 		{Name: "role_list", DisplayName: "角色列表", Resource: "role", Action: "list"},
 		{Name: "role_create", DisplayName: "创建角色", Resource: "role", Action: "create"},
 		{Name: "role_update", DisplayName: "编辑角色", Resource: "role", Action: "update"},
 		{Name: "role_delete", DisplayName: "删除角色", Resource: "role", Action: "delete"},
-		
+
 		// 模型管理权限
 		{Name: "model_list", DisplayName: "模型列表", Resource: "model", Action: "list"},
 		{Name: "model_create", DisplayName: "创建模型", Resource: "model", Action: "create"},
 		{Name: "model_update", DisplayName: "编辑模型", Resource: "model", Action: "update"},
 		{Name: "model_delete", DisplayName: "删除模型", Resource: "model", Action: "delete"},
 		{Name: "model_apply", DisplayName: "应用模型", Resource: "model", Action: "apply"},
-		
+
 		// 数据管理权限
 		{Name: "data_list", DisplayName: "数据列表", Resource: "data", Action: "list"},
 		{Name: "data_create", DisplayName: "创建数据", Resource: "data", Action: "create"},
 		{Name: "data_update", DisplayName: "编辑数据", Resource: "data", Action: "update"},
 		{Name: "data_delete", DisplayName: "删除数据", Resource: "data", Action: "delete"},
-		
+
 		// 页面管理权限
 		{Name: "page_list", DisplayName: "页面列表", Resource: "page", Action: "list"},
 		{Name: "page_create", DisplayName: "创建页面", Resource: "page", Action: "create"},
@@ -236,5 +240,38 @@ func initDefaultPermissions() error {
 		}
 	}
 
+	return nil
+}
+
+func initDefaultDictionaries() error {
+	if err := utils.EnsureDictionaryItemsTable(); err != nil {
+		return fmt.Errorf("failed to ensure dictionary items table: %w", err)
+	}
+
+	items := []models.DictionaryItem{
+		{Type: "currency", Code: "CNY", Name: "人民币", NameZh: "人民币", NameEn: "Chinese Yuan", Symbol: "¥", Sort: 1, Enabled: true},
+		{Type: "currency", Code: "USD", Name: "美元", NameZh: "美元", NameEn: "US Dollar", Symbol: "$", Sort: 2, Enabled: true},
+		{Type: "currency", Code: "EUR", Name: "欧元", NameZh: "欧元", NameEn: "Euro", Symbol: "€", Sort: 3, Enabled: true},
+		{Type: "currency", Code: "GBP", Name: "英镑", NameZh: "英镑", NameEn: "British Pound", Symbol: "£", Sort: 4, Enabled: true},
+		{Type: "currency", Code: "JPY", Name: "日元", NameZh: "日元", NameEn: "Japanese Yen", Symbol: "¥", Sort: 5, Enabled: true},
+		{Type: "currency", Code: "HKD", Name: "港币", NameZh: "港币", NameEn: "Hong Kong Dollar", Symbol: "HK$", Sort: 6, Enabled: true},
+		{Type: "country", Code: "CN", Name: "中国", NameZh: "中国", NameEn: "China", Icon: "🇨🇳", Sort: 1, Enabled: true},
+		{Type: "country", Code: "US", Name: "美国", NameZh: "美国", NameEn: "United States", Icon: "🇺🇸", Sort: 2, Enabled: true},
+		{Type: "country", Code: "GB", Name: "英国", NameZh: "英国", NameEn: "United Kingdom", Icon: "🇬🇧", Sort: 3, Enabled: true},
+		{Type: "country", Code: "JP", Name: "日本", NameZh: "日本", NameEn: "Japan", Icon: "🇯🇵", Sort: 4, Enabled: true},
+		{Type: "country", Code: "DE", Name: "德国", NameZh: "德国", NameEn: "Germany", Icon: "🇩🇪", Sort: 5, Enabled: true},
+		{Type: "country", Code: "FR", Name: "法国", NameZh: "法国", NameEn: "France", Icon: "🇫🇷", Sort: 6, Enabled: true},
+	}
+
+	for _, item := range items {
+		var existing models.DictionaryItem
+		if err := utils.DB.Where("type = ? AND code = ?", item.Type, item.Code).First(&existing).Error; err == nil {
+			continue
+		}
+		item.ID = uuid.New().String()
+		if err := utils.DB.Create(&item).Error; err != nil {
+			utils.Logger.Error(fmt.Sprintf("Failed to create dictionary %s/%s: %v", item.Type, item.Code, err))
+		}
+	}
 	return nil
 }

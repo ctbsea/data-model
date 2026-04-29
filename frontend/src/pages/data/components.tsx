@@ -5,7 +5,6 @@ import { Field, Model } from '../../api/model'
 import { getFieldIcon, getFieldColor, TAG_COLORS } from './utils'
 import type { MenuProps } from 'antd'
 
-const { Option } = Dropdown
 
 // 字段表头组件
 interface FieldHeaderProps {

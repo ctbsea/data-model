@@ -114,7 +114,7 @@ export const PanelPage: React.FC = () => {
           <Popconfirm
             title="确认删除"
             description="确定要删除这个面板吗？"
-            onOk={handleDeletePanel}
+            onConfirm={handleDeletePanel}
           >
             <Button danger icon={<DeleteOutlined />}>删除面板</Button>
           </Popconfirm>

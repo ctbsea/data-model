@@ -75,14 +75,20 @@ export const dataApi = {
     request.get<any, any>(`/data/${modelName}/${id}`),
 
   create: (modelName: string, data: any) =>
-    request.post(`/data/${modelName}`, data),
+    request.post<any, any>(`/data/${modelName}`, data),
 
   update: (modelName: string, id: string, data: any) =>
-    request.put(`/data/${modelName}/${id}`, data),
+    request.put<any, any>(`/data/${modelName}/${id}`, data),
 
   delete: (modelName: string, id: string) =>
-    request.delete(`/data/${modelName}/${id}`),
+    request.delete<any, any>(`/data/${modelName}/${id}`),
 
   batch: (modelName: string, data: BatchOperationRequest) =>
-    request.post(`/data/${modelName}/batch`, data),
+    request.post<any, any>(`/data/${modelName}/batch`, data),
+
+  batchDelete: (modelName: string, ids: string[]) =>
+    request.post<any, any>(`/data/${modelName}/batch`, { operation: 'delete', ids }),
+
+  batchUpdate: (modelName: string, updates: Array<{ id: string; data: any }>) =>
+    request.post<any, any>(`/data/${modelName}/batch`, { operation: 'update', updates }),
 }

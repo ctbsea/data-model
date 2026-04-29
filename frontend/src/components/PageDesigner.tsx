@@ -125,7 +125,7 @@ const CanvasComponent: React.FC<{
 
   drag(drop(ref))
 
-  const definition = componentRegistry[component.type]
+  const definition = componentRegistry[component.type as ComponentType]
 
   return (
     <div
@@ -208,7 +208,7 @@ const PropertyPanel: React.FC<{
     )
   }
 
-  const definition = componentRegistry[component.type]
+  const definition = componentRegistry[component.type as ComponentType]
 
   const handleValuesChange = (changedValues: any) => {
     onUpdate(component.id, { props: { ...component.props, ...changedValues } })
@@ -226,7 +226,7 @@ const PropertyPanel: React.FC<{
           <Input />
         </Form.Item>
         
-        {definition?.propSchema.map(prop => (
+        {definition?.propSchema.map((prop: any) => (
           <Form.Item key={prop.name} label={prop.label} name={prop.name}>
             {prop.type === 'string' && <Input />}
             {prop.type === 'number' && <InputNumber style={{ width: '100%' }} />}

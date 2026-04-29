@@ -11,7 +11,7 @@ export const createRecord = async (
   try {
     const id = await dataApi.create(modelName, record)
     message.success('创建成功')
-    onSuccess(id)
+    onSuccess(String((id as any)?.id ?? id))
     return id
   } catch (error: any) {
     message.error(error.response?.data?.error || '创建失败')

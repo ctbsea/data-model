@@ -324,8 +324,8 @@ export const StatisticWidget: React.FC<StatisticWidgetProps> = ({
               const agg = getFieldValue('aggregation')
               if (agg && agg !== 'count') {
                 const isNumericOnly = agg === 'sum' || agg === 'avg'
-                const fields = isNumericOnly
-                  ? modelFields.filter(f => !f.deleted && f.type === 'number')
+                  const fields = isNumericOnly
+                    ? modelFields.filter(f => !f.deleted && (f.type === 'number' || f.type === 'currency'))
                   : modelFields.filter(f => !f.deleted)
                 return (
                   <Form.Item label="字段" name="field" rules={[{ required: true }]}>

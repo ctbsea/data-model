@@ -155,7 +155,11 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           filter: Object.keys(mergedFilter).length > 0 ? mergedFilter : undefined,
         })
       } else {
-        return
+        result = await dataApi.aggregate(config.modelName, {
+          metrics: apiMetrics,
+          filter: Object.keys(mergedFilter).length > 0 ? mergedFilter : undefined,
+        })
+        result = result.map(item => ({ ...item, name: widget.title || '统计' }))
       }
 
       setData(result)
@@ -376,7 +380,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   }
 
   const needsField = (agg: string) => agg !== 'count'
-  const numberFields = modelFields.filter(f => !f.deleted && f.type === 'number')
+  const numberFields = modelFields.filter(f => !f.deleted && (f.type === 'number' || f.type === 'currency'))
   const allFields = modelFields.filter(f => !f.deleted && f.name !== 'id')
   const dateFields = modelFields.filter(f => !f.deleted && f.type === 'date')
   const dimFields = modelFields.filter(f => !f.deleted && f.name !== 'id' && f.name !== 'created_at' && f.name !== 'updated_at')

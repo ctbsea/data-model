@@ -8,30 +8,30 @@ import (
 
 // User 用户表
 type User struct {
-	ID           string    `json:"id" gorm:"primaryKey;size:64"`
-	Username     string    `json:"username" gorm:"uniqueIndex;size:64;not null"`
-	Email        string    `json:"email" gorm:"uniqueIndex;size:128;not null"`
-	PasswordHash string    `json:"-" gorm:"size:256;not null"`
-	Nickname     string    `json:"nickname" gorm:"size:64"`
-	Avatar       string    `json:"avatar" gorm:"size:256"`
-	Status       string    `json:"status" gorm:"size:20;default:'active'"`
-	EmailAddress string    `json:"email_address" gorm:"size:128"` // 用户配置的邮件地址
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string         `json:"id" gorm:"primaryKey;size:64"`
+	Username     string         `json:"username" gorm:"uniqueIndex;size:64;not null"`
+	Email        string         `json:"email" gorm:"uniqueIndex;size:128;not null"`
+	PasswordHash string         `json:"-" gorm:"size:256;not null"`
+	Nickname     string         `json:"nickname" gorm:"size:64"`
+	Avatar       string         `json:"avatar" gorm:"size:256"`
+	Status       string         `json:"status" gorm:"size:20;default:'active'"`
+	EmailAddress string         `json:"email_address" gorm:"size:128"` // 用户配置的邮件地址
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
-	
-	Roles        []Role    `json:"roles" gorm:"many2many:user_roles;"`
+
+	Roles []Role `json:"roles" gorm:"many2many:user_roles;"`
 }
 
 // Role 角色表
 type Role struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:64"`
-	Name        string    `json:"name" gorm:"uniqueIndex;size:64;not null"`
-	DisplayName string    `json:"display_name" gorm:"size:128"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string         `json:"id" gorm:"primaryKey;size:64"`
+	Name        string         `json:"name" gorm:"uniqueIndex;size:64;not null"`
+	DisplayName string         `json:"display_name" gorm:"size:128"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
-	
+
 	Permissions []Permission `json:"permissions" gorm:"many2many:role_permissions;"`
 }
 
@@ -47,40 +47,40 @@ type Permission struct {
 
 // Model 数据模型定义
 type Model struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:64"`
-	Name        string    `json:"name" gorm:"uniqueIndex;size:64;not null"`
-	DisplayName string    `json:"display_name" gorm:"size:128;not null"`
-	Description string    `json:"description" gorm:"size:512"`
-	TableName   string    `json:"table_name" gorm:"uniqueIndex;size:64;not null"`
-	Version     int       `json:"version" gorm:"default:1"`
-	Status      string    `json:"status" gorm:"size:20;default:'draft'"`
-	CreatedBy   string    `json:"created_by" gorm:"size:64"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string         `json:"id" gorm:"primaryKey;size:64"`
+	Name        string         `json:"name" gorm:"uniqueIndex;size:64;not null"`
+	DisplayName string         `json:"display_name" gorm:"size:128;not null"`
+	Description string         `json:"description" gorm:"size:512"`
+	TableName   string         `json:"table_name" gorm:"uniqueIndex;size:64;not null"`
+	Version     int            `json:"version" gorm:"default:1"`
+	Status      string         `json:"status" gorm:"size:20;default:'draft'"`
+	CreatedBy   string         `json:"created_by" gorm:"size:64"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
-	
-	Fields      []Field    `json:"fields" gorm:"foreignKey:ModelID"`
-	Relations   []Relation `json:"relations" gorm:"foreignKey:ModelID"`
+
+	Fields    []Field    `json:"fields" gorm:"foreignKey:ModelID"`
+	Relations []Relation `json:"relations" gorm:"foreignKey:ModelID"`
 }
 
 // Field 字段定义
 type Field struct {
-	ID           string    `json:"id" gorm:"primaryKey;size:64"`
-	ModelID      string    `json:"model_id" gorm:"index;size:64;not null"`
-	Name         string    `json:"name" gorm:"size:64;not null"`
-	DisplayName  string    `json:"display_name" gorm:"size:128;not null"`
-	Type         string    `json:"type" gorm:"size:32;not null"`
-	Required     bool      `json:"required" gorm:"default:false"`
-	Unique       bool      `json:"unique" gorm:"default:false"`
-	DefaultValue string    `json:"default_value" gorm:"size:256"`
-	Options      string    `json:"options" gorm:"type:json"`
-	Validation   string    `json:"validation" gorm:"type:json"`
+	ID           string `json:"id" gorm:"primaryKey;size:64"`
+	ModelID      string `json:"model_id" gorm:"index;size:64;not null"`
+	Name         string `json:"name" gorm:"size:64;not null"`
+	DisplayName  string `json:"display_name" gorm:"size:128;not null"`
+	Type         string `json:"type" gorm:"size:32;not null"`
+	Required     bool   `json:"required" gorm:"default:false"`
+	Unique       bool   `json:"unique" gorm:"default:false"`
+	DefaultValue string `json:"default_value" gorm:"size:256"`
+	Options      string `json:"options" gorm:"type:json"`
+	Validation   string `json:"validation" gorm:"type:json"`
 	// 关联字段配置
-	RelationConfig string `json:"relation_config" gorm:"type:json"` // JSON: {target_model_id, relation_type, display_field, allow_multiple, allow_duplicate, bidirectional}
-	IsLock         bool   `json:"is_lock" gorm:"default:false"`      // 字段锁定
-	CreatedBy      string `json:"created_by" gorm:"size:64"`         // 创建人用户ID
-	Order          int    `json:"order" gorm:"default:0"`
-	Deleted        bool   `json:"deleted" gorm:"default:false"` // 软删除标记
+	RelationConfig string    `json:"relation_config" gorm:"type:json"` // JSON: {target_model_id, relation_type, display_field, allow_multiple, allow_duplicate, bidirectional}
+	IsLock         bool      `json:"is_lock" gorm:"default:false"`     // 字段锁定
+	CreatedBy      string    `json:"created_by" gorm:"size:64"`        // 创建人用户ID
+	Order          int       `json:"order" gorm:"default:0"`
+	Deleted        bool      `json:"deleted" gorm:"default:false"` // 软删除标记
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -112,19 +112,19 @@ type ModelVersion struct {
 
 // Workflow 工作流定义
 type Workflow struct {
-	ID            string           `json:"id" gorm:"primaryKey;size:64"`
-	Name          string           `json:"name" gorm:"uniqueIndex;size:128;not null"`
-	DisplayName   string           `json:"display_name" gorm:"size:256"`
-	Description   string           `json:"description" gorm:"size:512"`
-	TriggerConfig string           `json:"trigger_config" gorm:"type:json"`
-	Status        string           `json:"status" gorm:"size:20;default:'draft'"`
-	CreatedBy     string           `json:"created_by" gorm:"size:64"`
-	CreatedAt     time.Time        `json:"created_at"`
-	UpdatedAt     time.Time        `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt   `json:"-" gorm:"index"`
-	
-	Nodes         []WorkflowNode   `json:"nodes" gorm:"foreignKey:WorkflowID"`
-	Edges         []WorkflowEdge   `json:"edges" gorm:"foreignKey:WorkflowID"`
+	ID            string         `json:"id" gorm:"primaryKey;size:64"`
+	Name          string         `json:"name" gorm:"uniqueIndex;size:128;not null"`
+	DisplayName   string         `json:"display_name" gorm:"size:256"`
+	Description   string         `json:"description" gorm:"size:512"`
+	TriggerConfig string         `json:"trigger_config" gorm:"type:json"`
+	Status        string         `json:"status" gorm:"size:20;default:'draft'"`
+	CreatedBy     string         `json:"created_by" gorm:"size:64"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
+
+	Nodes []WorkflowNode `json:"nodes" gorm:"foreignKey:WorkflowID"`
+	Edges []WorkflowEdge `json:"edges" gorm:"foreignKey:WorkflowID"`
 }
 
 // WorkflowNode 工作流节点
@@ -207,41 +207,41 @@ type NodeExecution struct {
 
 // Page 页面配置
 type Page struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:64"`
-	Name        string    `json:"name" gorm:"size:128;not null"`
-	Route       string    `json:"route" gorm:"uniqueIndex;size:256;not null"`
-	Title       string    `json:"title" gorm:"size:256"`
-	Layout      string    `json:"layout" gorm:"type:json"`
-	Components  string    `json:"components" gorm:"type:json;not null"`
-	Permissions string    `json:"permissions" gorm:"type:json"`
-	CreatedBy   string    `json:"created_by" gorm:"size:64"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string         `json:"id" gorm:"primaryKey;size:64"`
+	Name        string         `json:"name" gorm:"size:128;not null"`
+	Route       string         `json:"route" gorm:"uniqueIndex;size:256;not null"`
+	Title       string         `json:"title" gorm:"size:256"`
+	Layout      string         `json:"layout" gorm:"type:json"`
+	Components  string         `json:"components" gorm:"type:json;not null"`
+	Permissions string         `json:"permissions" gorm:"type:json"`
+	CreatedBy   string         `json:"created_by" gorm:"size:64"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // ChangeLog 变更日志
 type ChangeLog struct {
-	ID         string    `json:"id" gorm:"primaryKey;size:64"`
-	ModelName  string    `json:"model_name" gorm:"index;size:64"`
-	RowID      string    `json:"row_id" gorm:"index;size:64"`
-	FieldName  string    `json:"field_name" gorm:"size:64"`
-	OldValue   string    `json:"old_value" gorm:"type:json"`
-	NewValue   string    `json:"new_value" gorm:"type:json"`
-	Operation  string    `json:"operation" gorm:"size:20"`
-	ChangedBy  string    `json:"changed_by" gorm:"size:64"`
-	ChangedAt  time.Time `json:"changed_at"`
+	ID        string    `json:"id" gorm:"primaryKey;size:64"`
+	ModelName string    `json:"model_name" gorm:"index;size:64"`
+	RowID     string    `json:"row_id" gorm:"index;size:64"`
+	FieldName string    `json:"field_name" gorm:"size:64"`
+	OldValue  string    `json:"old_value" gorm:"type:json"`
+	NewValue  string    `json:"new_value" gorm:"type:json"`
+	Operation string    `json:"operation" gorm:"size:20"`
+	ChangedBy string    `json:"changed_by" gorm:"size:64"`
+	ChangedAt time.Time `json:"changed_at"`
 }
 
 // CellLock 单元格锁
 type CellLock struct {
-	ID         string    `json:"id" gorm:"primaryKey;size:64"`
-	ModelName  string    `json:"model_name" gorm:"size:64;not null"`
-	RowID      string    `json:"row_id" gorm:"size:64;not null"`
-	FieldName  string    `json:"field_name" gorm:"size:64"`
-	LockedBy   string    `json:"locked_by" gorm:"size:64;not null"`
-	LockedAt   time.Time `json:"locked_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	ID        string    `json:"id" gorm:"primaryKey;size:64"`
+	ModelName string    `json:"model_name" gorm:"size:64;not null"`
+	RowID     string    `json:"row_id" gorm:"size:64;not null"`
+	FieldName string    `json:"field_name" gorm:"size:64"`
+	LockedBy  string    `json:"locked_by" gorm:"size:64;not null"`
+	LockedAt  time.Time `json:"locked_at"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // ViewConfig 视图配置
@@ -272,7 +272,7 @@ type CommentCount struct {
 // Dashboard 仪表盘配置
 type Dashboard struct {
 	ID        string    `json:"id" gorm:"primaryKey;size:64"`
-	UserID    string    `json:"user_id" gorm:index;size:64;not null"`
+	UserID    string    `json:"user_id" gorm:"index;size:64;not null"`
 	Name      string    `json:"name" gorm:"size:128;not null"`
 	Config    string    `json:"config" gorm:"type:json"` // JSON: { panels: [] }
 	CreatedAt time.Time `json:"created_at"`
@@ -310,4 +310,21 @@ type AutomationRun struct {
 	RetryCount   int        `json:"retry_count" gorm:"default:0"`
 	StartedAt    time.Time  `json:"started_at"`
 	CompletedAt  *time.Time `json:"completed_at"`
+}
+
+// DictionaryItem 字典项（货币、国家等）
+type DictionaryItem struct {
+	ID        string         `json:"id" gorm:"primaryKey;size:64"`
+	Type      string         `json:"type" gorm:"index:idx_dictionary_type_code,unique;size:32;not null"`
+	Code      string         `json:"code" gorm:"index:idx_dictionary_type_code,unique;size:32;not null"`
+	Name      string         `json:"name" gorm:"size:128;not null"`
+	NameZh    string         `json:"name_zh" gorm:"size:128"`
+	NameEn    string         `json:"name_en" gorm:"size:128"`
+	Symbol    string         `json:"symbol" gorm:"size:32"`
+	Icon      string         `json:"icon" gorm:"size:256"`
+	Sort      int            `json:"sort" gorm:"default:0"`
+	Enabled   bool           `json:"enabled" gorm:"default:true"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }

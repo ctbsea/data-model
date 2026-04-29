@@ -1,12 +1,20 @@
-import React, { useRef } from 'react'
+﻿import React, { useEffect, useRef, useState } from 'react'
 import { Spin, Button, Tag, Dropdown, Select, Input, DatePicker, Badge, Modal, Upload, Image } from 'antd'
 import { DeleteOutlined, MoreOutlined, MailOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { Field, Model } from '../../api/model'
+import { dictionaryApi, DictionaryItem } from '../../api/dictionary'
 import { getFieldIcon, getFieldColor, TAG_COLORS } from './utils'
 import type { MenuProps } from 'antd'
 
 const { Option } = Select
+
+const getFileUrl = (url: string) => {
+  if (!url) return url
+  if (/^https?:\/\//i.test(url)) return url
+  const apiBase = (import.meta as any).env?.VITE_API_URL || ''
+  return apiBase ? `${apiBase}${url}` : url
+}
 
 interface TableViewProps {
   model: Model | null
@@ -69,6 +77,14 @@ export const TableView: React.FC<TableViewProps> = ({
   headerScrollRef,
   bodyScrollRef,
 }) => {
+  const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
+  const [countries, setCountries] = useState<DictionaryItem[]>([])
+
+  useEffect(() => {
+    dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
+    dictionaryApi.list('country').then(res => setCountries(res.items || [])).catch(console.error)
+  }, [])
+
   const handleHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (bodyScrollRef.current) {
       bodyScrollRef.current.scrollLeft = e.currentTarget.scrollLeft
@@ -184,11 +200,44 @@ export const TableView: React.FC<TableViewProps> = ({
             size="small"
             style={{ width: '100%' }}
             filterOption={(input, option) => 
-              (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+              String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
             }
           >
             {users.map((u: any) => (
               <Option key={u.id} value={u.id}>{u.nickname || u.username}</Option>
+            ))}
+          </Select>
+        )
+      }
+      if (field.type === 'currency') {
+        return (
+          <Input
+            autoFocus
+            type="number"
+            value={editValue}
+            onChange={(e) => onEditChange(e.target.value)}
+            onBlur={() => onEditBlur(row.id, field.name, editValue)}
+            onPressEnter={() => onEditBlur(row.id, field.name, editValue)}
+            size="small"
+            style={{ width: '100%' }}
+          />
+        )
+      }
+      if (field.type === 'country') {
+        return (
+          <Select
+            autoFocus
+            showSearch
+            value={editValue}
+            onChange={(value) => { onEditChange(value); onEditBlur(row.id, field.name, value) }}
+            size="small"
+            style={{ width: '100%' }}
+            filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+          >
+            {countries.map(country => (
+              <Option key={country.code} value={country.code} label={`${country.name_zh || country.name} ${country.name_en || ''}`}>
+                {country.icon} {country.name_zh || country.name} / {country.name_en}
+              </Option>
             ))}
           </Select>
         )
@@ -230,9 +279,10 @@ export const TableView: React.FC<TableViewProps> = ({
         return (
           <Upload
             action="/api/upload"
+            headers={{ Authorization: `Bearer ${localStorage.getItem('token') || ''}` }}
             name="file"
             showUploadList={false}
-            onSuccess={(response: any) => {
+            onChange={({ file }: any) => { if (file.status !== 'done') return; const response = file.response
               onEditChange(response.url)
               onEditBlur(row.id, field.name, response.url)
             }}
@@ -314,12 +364,24 @@ export const TableView: React.FC<TableViewProps> = ({
       return <span>{dayjs(value).format('YYYY-MM-DD HH:mm:ss')}</span>
     }
 
+    if (field.type === 'currency' && value !== undefined && value !== null && value !== '') {
+      const config = field.options ? (() => { try { return JSON.parse(field.options) } catch { return {} } })() : {}
+      const code = config.currency || 'CNY'
+      const currency = currencies.find(item => item.code === code)
+      return <span>{currency?.symbol || ''}{Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ color: '#999' }}>{code}</span></span>
+    }
+
+    if (field.type === 'country' && value) {
+      const country = countries.find(item => item.code === value)
+      return <Tag color="blue">{country?.icon} {country?.name_zh || value}{country?.name_en ? ` / ${country.name_en}` : ''}</Tag>
+    }
+
     // 文件/图片字段显示
     if (field.type === 'image' && value) {
-      return <Image src={value} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 4 }} />
+      return <Image src={getFileUrl(value)} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 4 }} />
     }
     if (field.type === 'file' && value) {
-      return <a href={value} target="_blank" rel="noreferrer">{value.split('/').pop()}</a>
+      return <a href={getFileUrl(value)} target="_blank" rel="noreferrer">{value.split('/').pop()}</a>
     }
 
     // 关联字段显示
@@ -457,3 +519,6 @@ export const TableView: React.FC<TableViewProps> = ({
     </div>
   )
 }
+
+
+

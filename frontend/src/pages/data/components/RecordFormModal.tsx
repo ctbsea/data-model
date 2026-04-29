@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Tag, Upload } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import { Field, Model, modelApi } from '../../../api/model'
 import { userApi } from '../../../api/user'
+import { dataApi } from '../../../api/data'
+import { dictionaryApi, DictionaryItem } from '../../../api/dictionary'
 import dayjs from 'dayjs'
 
 const { Option } = Select
@@ -16,7 +18,7 @@ const TAG_COLORS = [
 
 interface RecordFormModalProps {
   visible: boolean
-  record?: any // 编辑时有值，添加时为 undefined
+  record?: any // 缂栬緫鏃舵湁鍊硷紝娣诲姞鏃朵负 undefined
   model: Model | null
   fields: Field[]
   form: any
@@ -36,19 +38,23 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
   const [relationData, setRelationData] = useState<Record<string, any[]>>({})
   const [allModels, setAllModels] = useState<Model[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
+  const [countries, setCountries] = useState<DictionaryItem[]>([])
 
   useEffect(() => {
     if (visible && model) {
-      // 加载用户列表
+      // 鍔犺浇鐢ㄦ埛鍒楄〃
       userApi.list(1, 1000).then(res => setUsers(res.users || [])).catch(console.error)
+      dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
+      dictionaryApi.list('country').then(res => setCountries(res.items || [])).catch(console.error)
       // 加载所有模型
-      modelApi.list().then(setAllModels).catch(console.error)
+      modelApi.list(1, 1000).then(res => setAllModels(res.models || [])).catch(console.error)
     }
   }, [visible, model])
 
   useEffect(() => {
     if (visible && model) {
-      // 加载关联数据
+      // 鍔犺浇鍏宠仈鏁版嵁
       const loadRelationData = async () => {
         const data: Record<string, any[]> = {}
         for (const field of fields) {
@@ -57,7 +63,7 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
               const config = JSON.parse(field.relation_config)
               const targetModel = allModels.find(m => m.id === config.target_model_id)
               if (targetModel) {
-                const res = await modelApi.getData(targetModel.name, { page: 1, page_size: 100 })
+                const res = await dataApi.list(targetModel.name, 1, 100)
                 data[field.name] = res.data || []
               }
             } catch (e) {
@@ -97,12 +103,40 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
   const renderField = (field: Field) => {
     if (field.type === 'text' || field.type === 'email' || field.type === 'url' || field.type === 'textarea') {
       return field.type === 'textarea' ? 
-        <TextArea rows={3} placeholder={`请输入${field.display_name}`} /> :
-        <Input placeholder={`请输入${field.display_name}`} />
+        <TextArea rows={3} placeholder={`璇疯緭鍏?{field.display_name}`} /> :
+        <Input placeholder={`璇疯緭鍏?{field.display_name}`} />
     }
     
     if (field.type === 'number') {
-      return <InputNumber style={{ width: '100%' }} placeholder={`请输入${field.display_name}`} />
+      return <InputNumber style={{ width: '100%' }} placeholder={`璇疯緭鍏?{field.display_name}`} />
+    }
+
+    if (field.type === 'currency') {
+      let code = 'CNY'
+      try {
+        const config = field.options ? JSON.parse(field.options) : {}
+        code = config.currency || code
+      } catch {
+        // ignore invalid config
+      }
+      const currency = currencies.find(item => item.code === code)
+      return <InputNumber style={{ width: '100%' }} min={0} addonBefore={currency?.symbol || code} placeholder={`璇疯緭鍏?{field.display_name}`} />
+    }
+
+    if (field.type === 'country') {
+      return (
+        <Select
+          showSearch
+          placeholder="请选择国家"
+          filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+        >
+          {countries.map(country => (
+            <Option key={country.code} value={country.code} label={`${country.name_zh || country.name} ${country.name_en || ''}`}>
+              {country.icon} {country.name_zh || country.name} / {country.name_en}
+            </Option>
+          ))}
+        </Select>
+      )
     }
     
     if (field.type === 'select' || field.type === 'multi_select') {
@@ -121,7 +155,7 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
       return (
         <Select 
           mode={field.type === 'multi_select' ? 'multiple' : undefined}
-          placeholder={`请选择${field.display_name}`}
+          placeholder={`璇烽€夋嫨${field.display_name}`}
         >
           {hasColorConfig ? (
             options.map((opt: any) => (
@@ -159,7 +193,7 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
     
     if (field.type === 'user') {
       return (
-        <Select placeholder={`请选择${field.display_name}`}>
+        <Select placeholder={`璇烽€夋嫨${field.display_name}`}>
           {users.map(user => (
             <Option key={user.id} value={user.id}>{user.nickname || user.username}</Option>
           ))}
@@ -171,13 +205,14 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
       return (
         <Upload
           action="/api/upload"
+          headers={{ Authorization: `Bearer ${localStorage.getItem('token') || ''}` }}
           name="file"
           showUploadList={false}
-          onSuccess={(response: any) => {
+          onChange={({ file }: any) => { if (file.status !== 'done') return; const response = file.response
             form.setFieldsValue({ [field.name]: response.url })
           }}
         >
-          <Button icon={<UploadOutlined />}>上传{field.type === 'image' ? '图片' : '文件'}</Button>
+          <Button icon={<UploadOutlined />}>涓婁紶{field.type === 'image' ? '鍥剧墖' : '鏂囦欢'}</Button>
         </Upload>
       )
     }
@@ -190,11 +225,11 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
         
         return (
           <Select
-            mode={config.allow_multiple ? 'multiple' : undefined}
-            placeholder={`请选择${field.display_name}`}
+            mode={config.allow_multiple ? 'multiple' as const : undefined}
+            placeholder={`璇烽€夋嫨${field.display_name}`}
             showSearch
             filterOption={(input, option) =>
-              (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
           >
             {records.map((rec: any) => {
@@ -210,16 +245,16 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
           </Select>
         )
       } catch {
-        return <Input placeholder={`请输入${field.display_name}`} />
+        return <Input placeholder={`璇疯緭鍏?{field.display_name}`} />
       }
     }
     
-    return <Input placeholder={`请输入${field.display_name}`} />
+    return <Input placeholder={`璇疯緭鍏?{field.display_name}`} />
   }
 
   return (
     <Modal
-      title={record ? '编辑记录' : '添加记录'}
+      title={record ? '缂栬緫璁板綍' : '娣诲姞璁板綍'}
       open={visible}
       onCancel={onCancel}
       footer={null}
@@ -241,10 +276,12 @@ export const RecordFormModal: React.FC<RecordFormModalProps> = ({
         ))}
         <Form.Item>
           <Button type="primary" htmlType="submit" block>
-            {record ? '保存' : '添加'}
+            {record ? '淇濆瓨' : '娣诲姞'}
           </Button>
         </Form.Item>
       </Form>
     </Modal>
   )
 }
+
+

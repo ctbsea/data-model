@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { Form, Input, Select, message, Modal, Button, Popover } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { modelApi, Field, Model } from '../../../api/model'
+import { dictionaryApi, DictionaryItem } from '../../../api/dictionary'
 
 const { Option } = Select
 
@@ -142,15 +143,37 @@ export const FieldModal: React.FC<FieldModalProps> = ({
 }) => {
   const [form] = Form.useForm()
   const isEdit = !!field
+  const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
+  const [models, setModels] = useState<Model[]>([])
 
   useEffect(() => {
     if (visible) {
+      dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
+      modelApi.list(1, 1000).then(res => setModels(res.models || [])).catch(console.error)
       if (field) {
         // 编辑模式: 填充现有数据
+        let currency = 'CNY'
+        let options = ''
+        let relationConfig: any = {}
+        try {
+          if (field.type === 'currency') {
+            currency = JSON.parse(field.options || '{}').currency || 'CNY'
+          } else if (field.options) {
+            const parsed = JSON.parse(field.options)
+            options = Array.isArray(parsed) ? parsed.join('\n') : field.options
+          }
+          relationConfig = field.relation_config ? JSON.parse(field.relation_config) : {}
+        } catch {
+          options = field.options || ''
+        }
         form.setFieldsValue({
           display_name: field.display_name,
           type: field.type,
-          options: field.options ? JSON.parse(field.options).join('\n') : '',
+          options,
+          currency,
+          relation_target_model: relationConfig.target_model_id,
+          relation_type: relationConfig.relation_type || (relationConfig.allow_multiple ? 'one_to_many' : 'one_to_one'),
+          relation_display_fields: relationConfig.display_fields || [],
         })
       } else {
         // 添加模式: 重置表单
@@ -165,9 +188,16 @@ export const FieldModal: React.FC<FieldModalProps> = ({
     try {
       // 处理选项数据
       let optionsStr = '[]'
-      if (values.options) {
-        const optionsArray = values.options.split('\n').filter((s: string) => s.trim())
-        optionsStr = JSON.stringify(optionsArray)
+      if (values.type === 'currency') {
+        optionsStr = JSON.stringify({ currency: values.currency || 'CNY' })
+      } else if (values.options) {
+        try {
+          JSON.parse(values.options)
+          optionsStr = values.options
+        } catch {
+          const optionsArray = values.options.split('\n').filter((s: string) => s.trim())
+          optionsStr = JSON.stringify(optionsArray)
+        }
       }
 
       // 处理关联配置
@@ -257,6 +287,7 @@ export const FieldModal: React.FC<FieldModalProps> = ({
             <Option value="text">文本</Option>
             <Option value="textarea">多行文本</Option>
             <Option value="number">数字</Option>
+            <Option value="currency">货币金额</Option>
             <Option value="select">单选</Option>
             <Option value="multi_select">多选</Option>
             <Option value="boolean">布尔值</Option>
@@ -267,6 +298,7 @@ export const FieldModal: React.FC<FieldModalProps> = ({
             <Option value="url">链接</Option>
             <Option value="file">文件</Option>
             <Option value="image">图片</Option>
+            <Option value="country">国家</Option>
             <Option value="relation">关联字段</Option>
             <Option value="user">用户</Option>
           </Select>
@@ -286,6 +318,51 @@ export const FieldModal: React.FC<FieldModalProps> = ({
                 </Form.Item>
               )
             }
+
+            if (type === 'currency') {
+              return (
+                <Form.Item label="默认币种" name="currency" initialValue="CNY">
+                  <Select showSearch placeholder="选择默认币种">
+                    {currencies.map(item => (
+                      <Option key={item.code} value={item.code}>{item.symbol} {item.name_zh || item.name} / {item.name_en}</Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )
+            }
+
+            if (type === 'relation') {
+              const targetModelId = getFieldValue('relation_target_model')
+              const targetModel = models.find(item => item.id === targetModelId)
+              return (
+                <>
+                  <Form.Item
+                    label="关联表"
+                    name="relation_target_model"
+                    rules={[{ required: true, message: '请选择关联表' }]}
+                  >
+                    <Select showSearch placeholder="选择要关联的数据表">
+                      {models.filter(item => item.id !== model?.id).map(item => (
+                        <Option key={item.id} value={item.id}>{item.display_name || item.name}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                  <Form.Item label="关联类型" name="relation_type" initialValue="one_to_many">
+                    <Select>
+                      <Option value="one_to_one">一对一</Option>
+                      <Option value="one_to_many">一对多</Option>
+                    </Select>
+                  </Form.Item>
+                  <Form.Item label="显示字段" name="relation_display_fields">
+                    <Select mode="multiple" placeholder="选择关联记录在列表中显示的字段">
+                      {(targetModel?.fields || []).filter(item => !item.deleted).map(item => (
+                        <Option key={item.name} value={item.name}>{item.display_name || item.name}</Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </>
+              )
+            }
             
             return null
           }}
@@ -294,3 +371,5 @@ export const FieldModal: React.FC<FieldModalProps> = ({
     </Modal>
   )
 }
+
+

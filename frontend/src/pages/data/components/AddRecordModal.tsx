@@ -1,7 +1,8 @@
-import React from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Tag, Upload, Image } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import { Field } from '../../../api/model'
+import { dictionaryApi, DictionaryItem } from '../../../api/dictionary'
 
 const { Option } = Select
 
@@ -31,6 +32,15 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
   onSubmit,
   onCancel
 }) => {
+  const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
+  const [countries, setCountries] = useState<DictionaryItem[]>([])
+
+  useEffect(() => {
+    if (!visible) return
+    dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
+    dictionaryApi.list('country').then(res => setCountries(res.items || [])).catch(console.error)
+  }, [visible])
+
   return (
     <Modal
       title="添加记录"
@@ -92,6 +102,21 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
                   ))
                 })()}
               </Select>
+            ) : field.type === 'currency' ? (
+              <InputNumber style={{ width: '100%' }} min={0} addonBefore={(() => {
+                const config = field.options ? JSON.parse(field.options) : {}
+                const code = config.currency || 'CNY'
+                const currency = currencies.find(item => item.code === code)
+                return currency?.symbol || code
+              })()} />
+            ) : field.type === 'country' ? (
+              <Select showSearch placeholder="请选择国家" filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
+                {countries.map(country => (
+                  <Option key={country.code} value={country.code} label={`${country.name_zh || country.name} ${country.name_en || ''}`}>
+                    {country.icon} {country.name_zh || country.name} / {country.name_en}
+                  </Option>
+                ))}
+              </Select>
             ) : field.type === 'date' ? (
               <DatePicker style={{ width: '100%' }} />
             ) : field.type === 'datetime' ? (
@@ -99,9 +124,10 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
             ) : field.type === 'file' ? (
               <Upload
                 action="/api/upload"
+                headers={{ Authorization: `Bearer ${localStorage.getItem('token') || ''}` }}
                 name="file"
                 showUploadList={false}
-                onSuccess={(response: any, file: any) => {
+                onChange={({ file }: any) => { if (file.status !== 'done') return; const response = file.response
                   form.setFieldsValue({ [field.name]: response.url })
                 }}
               >
@@ -110,9 +136,10 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
             ) : field.type === 'image' ? (
               <Upload
                 action="/api/upload"
+                headers={{ Authorization: `Bearer ${localStorage.getItem('token') || ''}` }}
                 name="file"
                 showUploadList={false}
-                onSuccess={(response: any, file: any) => {
+                onChange={({ file }: any) => { if (file.status !== 'done') return; const response = file.response
                   form.setFieldsValue({ [field.name]: response.url })
                 }}
               >
@@ -134,7 +161,7 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
                 mode={(() => {
                   try {
                     const config = JSON.parse(field.relation_config || '{}')
-                    return config.allow_multiple ? 'multiple' : undefined
+                    return config.allow_multiple ? 'multiple' as const : undefined
                   } catch {
                     return undefined
                   }
@@ -142,7 +169,7 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
                 placeholder={`请选择${field.display_name}`}
                 showSearch
                 filterOption={(input, option) =>
-                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                 }
               >
                 {(() => {
@@ -177,3 +204,5 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
     </Modal>
   )
 }
+
+

@@ -10,6 +10,7 @@ import { Model } from '../../api/model'
 import type { MenuProps } from 'antd'
 
 const { Option } = Select
+const AnyGridLayout = GridLayout as any
 const { RangePicker } = DatePicker
 
 interface PanelComponentProps {
@@ -339,7 +340,7 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
             <span>点击上方"添加组件"按钮添加图表或统计卡片</span>
           </div>
         ) : (
-          <GridLayout
+          <AnyGridLayout
             className="layout"
             layout={layout}
             cols={12}
@@ -392,7 +393,7 @@ export const PanelComponent: React.FC<PanelComponentProps> = ({ panel, models, o
                 )}
               </div>
             ))}
-          </GridLayout>
+          </AnyGridLayout>
         )}
       </div>
 

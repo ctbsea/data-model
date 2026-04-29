@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dmdp/platform/internal/models"
@@ -26,13 +27,13 @@ type DataService interface {
 }
 
 type AggregateRequest struct {
-	GroupBy     string                    `json:"group_by"`
-	TimeField   string                    `json:"time_field"`
-	Granularity string                    `json:"granularity"`
+	GroupBy     string                      `json:"group_by"`
+	TimeField   string                      `json:"time_field"`
+	Granularity string                      `json:"granularity"`
 	Metrics     []repositories.MetricOption `json:"metrics"`
-	Filter      map[string]interface{}    `json:"filter"`
-	Sort        []SortField               `json:"sort"`
-	Limit       int                       `json:"limit"`
+	Filter      map[string]interface{}      `json:"filter"`
+	Sort        []SortField                 `json:"sort"`
+	Limit       int                         `json:"limit"`
 }
 
 type ListDataRequest struct {
@@ -107,6 +108,10 @@ func (s *dataService) GetData(modelName, id string) (map[string]interface{}, err
 	if err != nil {
 		return nil, err
 	}
+	dataList := []map[string]interface{}{data}
+	if err := s.attachRelationData(model, dataList); err != nil {
+		fmt.Printf("Failed to attach relation data: %v\n", err)
+	}
 
 	return data, nil
 }
@@ -132,7 +137,7 @@ func (s *dataService) ListData(modelName string, req *ListDataRequest) (*ListDat
 			Order: sort.Order,
 		})
 	}
-	
+
 	// 默认按 ID 降序排序
 	if len(queryOptions.Sort) == 0 {
 		queryOptions.Sort = append(queryOptions.Sort, repositories.SortField{
@@ -310,7 +315,7 @@ func (s *dataService) attachRelationData(model *models.Model, dataList []map[str
 	// 对每个关联字段批量查询
 	for _, field := range relationFields {
 		var config struct {
-			TargetModelID string `json:"target_model_id"`
+			TargetModelID string   `json:"target_model_id"`
 			DisplayFields []string `json:"display_fields"`
 		}
 		if err := json.Unmarshal([]byte(field.RelationConfig), &config); err != nil {
@@ -326,18 +331,7 @@ func (s *dataService) attachRelationData(model *models.Model, dataList []map[str
 		relationIDs := []string{}
 		for _, row := range dataList {
 			if val, ok := row[field.Name]; ok && val != nil {
-				switch v := val.(type) {
-				case string:
-					if v != "" {
-						relationIDs = append(relationIDs, v)
-					}
-				case []interface{}:
-					for _, id := range v {
-						if idStr, ok := id.(string); ok && idStr != "" {
-							relationIDs = append(relationIDs, idStr)
-						}
-					}
-				}
+				relationIDs = append(relationIDs, normalizeRelationIDs(val)...)
 			}
 		}
 
@@ -362,18 +356,16 @@ func (s *dataService) attachRelationData(model *models.Model, dataList []map[str
 		// 附加关联数据到每条记录
 		for _, row := range dataList {
 			if val, ok := row[field.Name]; ok && val != nil {
-				switch v := val.(type) {
-				case string:
-					if related, exists := relationMap[v]; exists {
+				ids := normalizeRelationIDs(val)
+				if len(ids) == 1 {
+					if related, exists := relationMap[ids[0]]; exists {
 						row[field.Name+"_data"] = related
 					}
-				case []interface{}:
+				} else if len(ids) > 1 {
 					relatedList := []map[string]interface{}{}
-					for _, id := range v {
-						if idStr, ok := id.(string); ok {
-							if related, exists := relationMap[idStr]; exists {
-								relatedList = append(relatedList, related)
-							}
+					for _, id := range ids {
+						if related, exists := relationMap[id]; exists {
+							relatedList = append(relatedList, related)
 						}
 					}
 					row[field.Name+"_data"] = relatedList
@@ -383,6 +375,43 @@ func (s *dataService) attachRelationData(model *models.Model, dataList []map[str
 	}
 
 	return nil
+}
+
+func normalizeRelationIDs(value interface{}) []string {
+	ids := []string{}
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+
+	switch v := value.(type) {
+	case string:
+		if strings.HasPrefix(v, "[") {
+			var values []string
+			if err := json.Unmarshal([]byte(v), &values); err == nil {
+				for _, id := range values {
+					add(id)
+				}
+				return ids
+			}
+		}
+		for _, id := range strings.Split(v, ",") {
+			add(id)
+		}
+	case []string:
+		for _, id := range v {
+			add(id)
+		}
+	case []interface{}:
+		for _, id := range v {
+			if idStr, ok := id.(string); ok {
+				add(idStr)
+			}
+		}
+	}
+	return ids
 }
 
 func (s *dataService) UpdateData(modelName, id string, data map[string]interface{}, userID string) error {
@@ -523,8 +552,16 @@ func (s *dataService) validateData(model *models.Model, data map[string]interfac
 			if err := s.validateFieldType(field, value); err != nil {
 				return err
 			}
-			// 数字类型:字符串转数字
-			if field.Type == "number" {
+			if field.Type == "relation" {
+				ids := normalizeRelationIDs(value)
+				if len(ids) > 1 {
+					data[field.Name] = strings.Join(ids, ",")
+				} else if len(ids) == 1 {
+					data[field.Name] = ids[0]
+				}
+			}
+			// 数字/货币类型:字符串转数字
+			if field.Type == "number" || field.Type == "currency" {
 				if str, ok := value.(string); ok {
 					if num, err := strconv.ParseFloat(str, 64); err == nil {
 						data[field.Name] = num
@@ -539,11 +576,18 @@ func (s *dataService) validateData(model *models.Model, data map[string]interfac
 
 func (s *dataService) validateFieldType(field *models.Field, value interface{}) error {
 	switch field.Type {
-	case "text":
+	case "relation":
+		switch value.(type) {
+		case string, []string, []interface{}:
+			return nil
+		default:
+			return fmt.Errorf("field %s must be string or array", field.Name)
+		}
+	case "text", "textarea", "select", "multi_select", "email", "phone", "url", "file", "image", "country", "user":
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("field %s must be string", field.Name)
 		}
-	case "number":
+	case "number", "currency":
 		// 允许字符串数字和空值
 		if isNumber(value) {
 			return nil
@@ -632,7 +676,7 @@ func (s *dataService) recordChangeLogs(modelName, recordID string, oldData, newD
 		// 比较新旧值，只有变化才记录
 		if !isEqual(oldValue, newValue) {
 			utils.Logger.Info(fmt.Sprintf("Field %s changed: oldValue=%v, newValue=%v", field, oldValue, newValue))
-			
+
 			// 将值转换为 JSON 字符串格式存储
 			var oldValueStr, newValueStr string
 			if oldValue != nil {
@@ -647,7 +691,7 @@ func (s *dataService) recordChangeLogs(modelName, recordID string, oldData, newD
 			} else {
 				newValueStr = "null"
 			}
-			
+
 			changeLogs = append(changeLogs, models.ChangeLog{
 				ID:        uuid.New().String(),
 				ModelName: modelName,

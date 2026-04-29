@@ -29,7 +29,7 @@ export const useDataLoader = (modelName: string | undefined, pageSize: number = 
       const foundModel = response.models.find((m: Model) => m.name === modelName)
       if (foundModel) {
         setModel(foundModel)
-        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => a.order - b.order)
+        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => (a.order ?? 0) - (b.order ?? 0))
         setFields(sortedFields)
       }
     } catch (error) {
@@ -106,7 +106,7 @@ export const useDataLoader = (modelName: string | undefined, pageSize: number = 
         }
         
         setModel(foundModel)
-        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => a.order - b.order)
+        const sortedFields = (foundModel.fields || []).sort((a: Field, b: Field) => (a.order ?? 0) - (b.order ?? 0))
         setFields(sortedFields)
         
         // 加载数据

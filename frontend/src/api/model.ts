@@ -14,7 +14,7 @@ export interface Field {
   relation_config?: string  // JSON字符串: {target_model_id, relation_type, display_field, allow_multiple, allow_duplicate, bidirectional}
   is_lock?: boolean  // 字段锁定
   created_by?: string  // 创建人用户ID
-  order: number
+  order?: number
   created_at?: string
   updated_at?: string
   deleted?: boolean
@@ -78,16 +78,17 @@ export interface UpdateModelRequest {
 }
 
 export interface AddFieldRequest {
-  name: string
-  display_name: string
-  type: Field['type']
-  required: boolean
-  unique: boolean
+  name?: string
+  display_name?: string
+  type?: Field['type']
+  required?: boolean
+  unique?: boolean
   default_value?: string
   options?: string  // JSON字符串
   validation?: string  // JSON字符串
   relation_config?: string  // JSON字符串
-  order: number
+  order?: number
+  is_lock?: boolean
   deleted?: boolean
 }
 

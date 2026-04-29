@@ -215,7 +215,7 @@ const KanbanView: React.FC<KanbanViewProps> = ({
             return displayFields.map((f: string) => relData[0][f]).filter(Boolean).join(' - ')
           }
           const firstField = Object.keys(relData[0]).find(k => k !== 'id' && k !== 'created_at' && k !== 'updated_at')
-          return relData[0][firstField] || value
+          return firstField ? relData[0][firstField] || value : value
         }
       }
     }
@@ -382,7 +382,7 @@ const KanbanView: React.FC<KanbanViewProps> = ({
                   mode={(() => {
                     try {
                       const config = JSON.parse(field.relation_config || '{}')
-                      return config.allow_multiple ? 'multiple' : undefined
+                      return config.allow_multiple ? 'multiple' as const : undefined
                     } catch {
                       return undefined
                     }
@@ -390,7 +390,7 @@ const KanbanView: React.FC<KanbanViewProps> = ({
                   placeholder={`请选择${field.display_name}`}
                   showSearch
                   filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                 >
                   {(() => {
@@ -436,7 +436,6 @@ const KanbanView: React.FC<KanbanViewProps> = ({
             setCurrentRecord(null)
           }}
           onUpdate={onDataChange}
-          onDelete={onDataChange}
         />
       )}
     </div>

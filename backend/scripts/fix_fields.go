@@ -4,59 +4,83 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/dmdp/platform/internal/config"
 	"github.com/dmdp/platform/internal/utils"
 )
 
 func main() {
-	// 初始化数据库连接
-	if err := utils.InitDB(); err != nil {
+	if err := config.Init("./config/config.yaml"); err != nil {
+		log.Fatal("Failed to load config:", err)
+	}
+	if err := utils.InitLogger(&config.Get().Log); err != nil {
+		log.Fatal("Failed to init logger:", err)
+	}
+	defer utils.Sync()
+	if err := utils.InitDatabase(&config.Get().Database); err != nil {
 		log.Fatal("Failed to init database:", err)
 	}
+	defer utils.CloseDatabase()
 
-	// 查询所有数据表
 	var tables []string
-	if err := utils.DB.Raw("SHOW TABLES LIKE 'data_%'").Scan(&tables).Error; err != nil {
+	if err := utils.DB.Raw(`
+		SELECT tablename
+		FROM pg_tables
+		WHERE schemaname = 'public' AND tablename LIKE 'data\_%' ESCAPE '\'
+	`).Scan(&tables).Error; err != nil {
 		log.Fatal("Failed to get tables:", err)
 	}
 
+	fixed := 0
 	for _, table := range tables {
+		quotedTable, err := utils.QuoteSQLIdentifier(table)
+		if err != nil {
+			log.Printf("Invalid table %s: %v", table, err)
+			continue
+		}
 		fmt.Printf("Processing table: %s\n", table)
 
-		// 获取表结构
 		var columns []struct {
-			Field   string
-			Type    string
-			Null    string
-			Key     string
-			Default *string
-			Extra   string
+			ColumnName    string  `gorm:"column:column_name"`
+			IsNullable    string  `gorm:"column:is_nullable"`
+			ColumnDefault *string `gorm:"column:column_default"`
 		}
-
-		if err := utils.DB.Raw(fmt.Sprintf("DESCRIBE `%s`", table)).Scan(&columns).Error; err != nil {
-			log.Printf("Failed to describe table %s: %v", table, err)
+		if err := utils.DB.Raw(`
+			SELECT column_name, is_nullable, column_default
+			FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = ?
+		`, table).Scan(&columns).Error; err != nil {
+			log.Printf("Failed to inspect table %s: %v", table, err)
 			continue
 		}
 
-		// 检查每个字段
 		for _, col := range columns {
-			// 跳过系统字段
-			if col.Field == "id" || col.Field == "created_at" || col.Field == "updated_at" || col.Field == "created_by" || col.Field == "updated_by" {
+			if isSystemField(col.ColumnName) || col.ColumnDefault != nil || col.IsNullable != "NO" {
 				continue
 			}
-
-			// 如果字段没有默认值且不允许NULL,修改为允许NULL
-			if col.Default == nil && col.Null == "NO" {
-				alterSQL := fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` %s DEFAULT NULL", table, col.Field, col.Type)
-				fmt.Printf("  Fixing column %s: %s\n", col.Field, alterSQL)
-				
-				if err := utils.DB.Exec(alterSQL).Error; err != nil {
-					log.Printf("  Failed to fix column %s: %v", col.Field, err)
-				} else {
-					fmt.Printf("  ✓ Column %s fixed\n", col.Field)
-				}
+			quotedColumn, err := utils.QuoteSQLIdentifier(col.ColumnName)
+			if err != nil {
+				log.Printf("Invalid column %s.%s: %v", table, col.ColumnName, err)
+				continue
+			}
+			alterSQL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", quotedTable, quotedColumn)
+			fmt.Printf("  Fixing column %s: %s\n", col.ColumnName, alterSQL)
+			if err := utils.DB.Exec(alterSQL).Error; err != nil {
+				log.Printf("  Failed to fix column %s: %v", col.ColumnName, err)
+			} else {
+				fixed++
+				fmt.Printf("  Column %s fixed\n", col.ColumnName)
 			}
 		}
 	}
 
-	fmt.Println("Done!")
+	fmt.Printf("Done! Fixed %d columns\n", fixed)
+}
+
+func isSystemField(field string) bool {
+	switch field {
+	case "id", "created_at", "updated_at", "created_by", "updated_by":
+		return true
+	default:
+		return false
+	}
 }

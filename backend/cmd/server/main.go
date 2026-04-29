@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -73,69 +74,8 @@ func main() {
 	uploadDir := "./uploads"
 	os.MkdirAll(uploadDir, 0755)
 	router.Static("/uploads", uploadDir)
-	router.POST("/api/upload", func(c *gin.Context) {
-		file, err := c.FormFile("file")
-		if err != nil {
-			c.JSON(400, gin.H{"error": "No file uploaded"})
-			return
-		}
-		ext := filepath.Ext(file.Filename)
-		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-		if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, filename)); err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(200, gin.H{"url": "/uploads/" + filename, "filename": file.Filename})
-	})
-
-	// 修复字段默认值
-	router.POST("/api/fix-fields", func(c *gin.Context) {
-		// 查询所有数据表
-		var tables []string
-		if err := utils.DB.Raw("SHOW TABLES LIKE 'data_%'").Scan(&tables).Error; err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		fixed := 0
-		for _, table := range tables {
-			// 获取表结构
-			var columns []struct {
-				Field   string
-				Type    string
-				Null    string
-				Key     string
-				Default *string
-				Extra   string
-			}
-
-			if err := utils.DB.Raw(fmt.Sprintf("DESCRIBE `%s`", table)).Scan(&columns).Error; err != nil {
-				continue
-			}
-
-			// 检查每个字段
-			for _, col := range columns {
-				// 跳过系统字段
-				if col.Field == "id" || col.Field == "created_at" || col.Field == "updated_at" || col.Field == "created_by" || col.Field == "updated_by" {
-					continue
-				}
-
-				// 如果字段没有默认值且不允许NULL,修改为允许NULL
-				if col.Default == nil && col.Null == "NO" {
-					alterSQL := fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` %s DEFAULT NULL", table, col.Field, col.Type)
-					
-					if err := utils.DB.Exec(alterSQL).Error; err != nil {
-						utils.Logger.Error(fmt.Sprintf("Failed to fix column %s.%s: %v", table, col.Field, err))
-					} else {
-						fixed++
-						utils.Logger.Info(fmt.Sprintf("Fixed column %s.%s", table, col.Field))
-					}
-				}
-			}
-		}
-
-		c.JSON(200, gin.H{"message": "Fields fixed", "count": fixed})
-	})
+	router.POST("/api/upload", middleware.AuthMiddleware(), handleUpload(uploadDir))
+	router.POST("/api/fix-fields", middleware.AuthMiddleware(), handleFixFields)
 
 	// 初始化 Handler
 	authHandler := handlers.NewAuthHandler()
@@ -149,6 +89,7 @@ func main() {
 	commentHandler := handlers.NewCommentHandler(utils.DB)
 	historyHandler := handlers.NewHistoryHandler(utils.DB)
 	viewConfigHandler := handlers.NewViewConfigHandler(utils.DB)
+	dictionaryHandler := handlers.NewDictionaryHandler()
 
 	// API 路由组
 	api := router.Group("/api/v1")
@@ -228,11 +169,21 @@ func main() {
 				models.DELETE("/:id/relations/:relationId", modelHandler.DeleteRelation)
 			}
 
+			// 字典管理
+			dictionaries := protected.Group("/dictionaries")
+			{
+				dictionaries.GET("", dictionaryHandler.List)
+				dictionaries.GET("/:type", dictionaryHandler.List)
+				dictionaries.POST("", dictionaryHandler.Create)
+				dictionaries.PUT("/:id", dictionaryHandler.Update)
+				dictionaries.DELETE("/:id", dictionaryHandler.Delete)
+			}
+
 			// 动态数据管理
 			data := protected.Group("/data")
 			{
 				data.GET("/:modelName/aggregate", dataHandler.AggregateData)
-					data.GET("/:modelName", dataHandler.ListData)
+				data.GET("/:modelName", dataHandler.ListData)
 				data.GET("/:modelName/:id", dataHandler.GetData)
 				data.POST("/:modelName", dataHandler.CreateData)
 				data.PUT("/:modelName/:id", dataHandler.UpdateData)
@@ -360,4 +311,103 @@ func main() {
 	}
 
 	utils.Logger.Info("Server exited")
+}
+
+func handleUpload(uploadDir string) gin.HandlerFunc {
+	allowedExts := map[string]bool{
+		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+		".pdf": true, ".txt": true, ".csv": true, ".xlsx": true, ".docx": true, ".zip": true,
+	}
+	const maxUploadSize = 10 << 20
+
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadSize)
+		file, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded or file too large"})
+			return
+		}
+		if file.Size > maxUploadSize {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "File exceeds 10MB limit"})
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		if !allowedExts[ext] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported file type"})
+			return
+		}
+
+		filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+		if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, filename)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"url": "/uploads/" + filename, "filename": file.Filename})
+	}
+}
+
+func handleFixFields(c *gin.Context) {
+	var tables []string
+	if err := utils.DB.Raw(`
+		SELECT tablename
+		FROM pg_tables
+		WHERE schemaname = 'public' AND tablename LIKE 'data\_%' ESCAPE '\'
+	`).Scan(&tables).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	fixed := 0
+	for _, table := range tables {
+		quotedTable, err := utils.QuoteSQLIdentifier(table)
+		if err != nil {
+			utils.Logger.Error(fmt.Sprintf("Invalid table identifier %s: %v", table, err))
+			continue
+		}
+
+		var columns []struct {
+			ColumnName    string  `gorm:"column:column_name"`
+			IsNullable    string  `gorm:"column:is_nullable"`
+			ColumnDefault *string `gorm:"column:column_default"`
+		}
+		if err := utils.DB.Raw(`
+			SELECT column_name, is_nullable, column_default
+			FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = ?
+		`, table).Scan(&columns).Error; err != nil {
+			utils.Logger.Error(fmt.Sprintf("Failed to inspect table %s: %v", table, err))
+			continue
+		}
+
+		for _, col := range columns {
+			if isSystemField(col.ColumnName) || col.ColumnDefault != nil || col.IsNullable != "NO" {
+				continue
+			}
+			quotedColumn, err := utils.QuoteSQLIdentifier(col.ColumnName)
+			if err != nil {
+				utils.Logger.Error(fmt.Sprintf("Invalid column identifier %s.%s: %v", table, col.ColumnName, err))
+				continue
+			}
+
+			alterSQL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", quotedTable, quotedColumn)
+			if err := utils.DB.Exec(alterSQL).Error; err != nil {
+				utils.Logger.Error(fmt.Sprintf("Failed to fix column %s.%s: %v", table, col.ColumnName, err))
+			} else {
+				fixed++
+				utils.Logger.Info(fmt.Sprintf("Fixed column %s.%s", table, col.ColumnName))
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Fields fixed", "count": fixed})
+}
+
+func isSystemField(field string) bool {
+	switch field {
+	case "id", "created_at", "updated_at", "created_by", "updated_by":
+		return true
+	default:
+		return false
+	}
 }

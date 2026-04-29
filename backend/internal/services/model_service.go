@@ -18,24 +18,24 @@ type ModelService interface {
 	ListModels(page, pageSize int) ([]models.Model, int64, error)
 	UpdateModel(id string, updates map[string]interface{}) error
 	DeleteModel(id string) error
-	
+
 	AddField(modelID string, field *models.Field) error
 	UpdateField(modelID, fieldID string, field *models.Field) error
 	DeleteField(modelID, fieldID string) error
-	
+
 	AddRelation(modelID string, relation *models.Relation) error
 	UpdateRelation(modelID, relationID string, relation *models.Relation) error
 	DeleteRelation(modelID, relationID string) error
-	
+
 	ApplyModel(modelID string) error
 }
 
 type modelService struct {
-	modelRepo      repositories.ModelRepository
-	fieldRepo      repositories.FieldRepository
-	relationRepo   repositories.RelationRepository
-	versionRepo    repositories.ModelVersionRepository
-	schemaManager  SchemaManager
+	modelRepo     repositories.ModelRepository
+	fieldRepo     repositories.FieldRepository
+	relationRepo  repositories.RelationRepository
+	versionRepo   repositories.ModelVersionRepository
+	schemaManager SchemaManager
 }
 
 func NewModelService() ModelService {
@@ -49,6 +49,10 @@ func NewModelService() ModelService {
 }
 
 func (s *modelService) CreateModel(name, displayName, description, createdBy string) (*models.Model, error) {
+	if !utils.IsSafeSQLIdentifier(name) {
+		return nil, errors.New("invalid model name")
+	}
+
 	// 检查模型名称是否已存在
 	if _, err := s.modelRepo.GetByName(name); err == nil {
 		return nil, errors.New("model name already exists")
@@ -143,6 +147,10 @@ func (s *modelService) DeleteModel(id string) error {
 }
 
 func (s *modelService) AddField(modelID string, field *models.Field) error {
+	if !utils.IsSafeSQLIdentifier(field.Name) {
+		return errors.New("invalid field name")
+	}
+
 	model, err := s.modelRepo.GetByID(modelID)
 	if err != nil {
 		return errors.New("model not found")
@@ -157,21 +165,20 @@ func (s *modelService) AddField(modelID string, field *models.Field) error {
 
 	// 如果模型已应用,则使用ALTER TABLE添加新字段
 	if model.Status == "applied" {
-		fieldType := MapFieldTypeToSQL(field.Type)
-		alterSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", model.TableName, field.Name, fieldType)
+		quotedTable, err := utils.QuoteSQLIdentifier(model.TableName)
+		if err != nil {
+			return err
+		}
+		quotedField, err := utils.QuoteSQLIdentifier(field.Name)
+		if err != nil {
+			return err
+		}
+		alterSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quotedTable, quotedField, MapFieldTypeToSQL(field.Type))
 
-		// 如果有默认值,添加DEFAULT子句
 		if field.DefaultValue != "" {
-			alterSQL += fmt.Sprintf(" DEFAULT '%s'", field.DefaultValue)
+			alterSQL += " DEFAULT " + utils.SQLStringLiteral(field.DefaultValue)
 		} else {
-			// 根据字段类型设置不同的默认值
-			if field.Type == "date" {
-				// 日期字段使用NULL
-				alterSQL += " NULL"
-			} else {
-				// 其他字段使用NULL默认值
-				alterSQL += " DEFAULT NULL"
-			}
+			alterSQL += " DEFAULT NULL"
 		}
 
 		if err := utils.DB.Exec(alterSQL).Error; err != nil {
@@ -194,6 +201,9 @@ func (s *modelService) UpdateField(modelID, fieldID string, field *models.Field)
 
 	// 只更新非零值字段
 	if field.Name != "" {
+		if !utils.IsSafeSQLIdentifier(field.Name) {
+			return errors.New("invalid field name")
+		}
 		existingField.Name = field.Name
 	}
 	if field.DisplayName != "" {
@@ -207,7 +217,7 @@ func (s *modelService) UpdateField(modelID, fieldID string, field *models.Field)
 	existingField.Unique = field.Unique
 	existingField.IsLock = field.IsLock
 	existingField.Deleted = field.Deleted
-	
+
 	if field.DefaultValue != "" {
 		existingField.DefaultValue = field.DefaultValue
 	}
@@ -256,10 +266,16 @@ func (s *modelService) DeleteField(modelID, fieldID string) error {
 
 	// 如果模型已应用,先删除表中的列
 	if model.Status == "applied" {
-		dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s", model.TableName, field.Name)
-		if err := utils.DB.Exec(dropSQL).Error; err != nil {
-			utils.Logger.Error(fmt.Sprintf("Failed to drop column %s: %v", field.Name, err))
-			// 继续删除字段记录,不中断流程
+		quotedTable, tableErr := utils.QuoteSQLIdentifier(model.TableName)
+		quotedField, fieldErr := utils.QuoteSQLIdentifier(field.Name)
+		if tableErr != nil || fieldErr != nil {
+			utils.Logger.Error(fmt.Sprintf("Invalid table or field identifier: table=%s, field=%s", model.TableName, field.Name))
+		} else {
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s", quotedTable, quotedField)
+			if err := utils.DB.Exec(dropSQL).Error; err != nil {
+				utils.Logger.Error(fmt.Sprintf("Failed to drop column %s: %v", field.Name, err))
+				// 继续删除字段记录,不中断流程
+			}
 		}
 	}
 
