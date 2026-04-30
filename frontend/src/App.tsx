@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Dashboard from './pages/Dashboard'
 import ModelList from './pages/ModelList'
 import Models from './pages/Models'
+import Dictionaries from './pages/Dictionaries'
 import Data from './pages/Data'
 import Workflows from './pages/Workflows'
 import WorkflowDesigner from './pages/WorkflowDesigner'
@@ -29,6 +30,7 @@ function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="model-list" element={<ModelList />} />
+        <Route path="dictionaries" element={<Dictionaries />} />
         <Route path="models/:id" element={<Models />} />
         <Route path="data/:modelName" element={<Data />} />
         <Route path="panel/:panelId" element={<PanelPage />} />

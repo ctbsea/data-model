@@ -201,6 +201,7 @@ func main() {
 				automations.DELETE("/:id", automationHandler.Delete)
 				automations.PUT("/:id/toggle", automationHandler.ToggleEnable)
 				automations.GET("/:id/runs", automationHandler.ListRuns)
+				automations.GET("/:id/webhook-logs", automationHandler.ListWebhookLogs)
 				automations.GET("/:id/stats", automationHandler.GetStats)
 				automations.POST("/:id/webhook-token", automationHandler.RegenerateWebhookToken)
 			}

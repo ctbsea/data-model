@@ -10,6 +10,7 @@ import (
 	"github.com/dmdp/platform/internal/services"
 	"github.com/dmdp/platform/internal/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type AutomationHandler struct {
@@ -74,6 +75,7 @@ func (h *AutomationHandler) Create(c *gin.Context) {
 
 	userID, _ := c.Get("userID")
 	automation := models.Automation{
+		ID:           uuid.New().String(),
 		ModelID:      req.ModelID,
 		Name:         req.Name,
 		Description:  req.Description,
@@ -267,12 +269,12 @@ func (h *AutomationHandler) GetStats(c *gin.Context) {
 	utils.DB.Where("automation_id = ?", id).Order("started_at DESC").First(&lastRun)
 
 	c.JSON(http.StatusOK, gin.H{
-		"run_count":     automation.RunCount,
-		"success_count": automation.SuccessCount,
-		"fail_count":    automation.FailCount,
+		"run_count":       automation.RunCount,
+		"success_count":   automation.SuccessCount,
+		"fail_count":      automation.FailCount,
 		"avg_duration_ms": avgDuration,
-		"daily_stats":   dailyStats,
-		"last_run":      lastRun,
+		"daily_stats":     dailyStats,
+		"last_run":        lastRun,
 	})
 }
 
@@ -288,10 +290,27 @@ func (h *AutomationHandler) WebhookTrigger(c *gin.Context) {
 	}
 	payload["_source"] = "webhook"
 
-	if err := h.engine.TriggerWebhook(token, payload); err != nil {
+	meta := services.WebhookMeta{
+		IdempotencyKey: c.GetHeader("Idempotency-Key"),
+		RemoteIP:       c.ClientIP(),
+		UserAgent:      c.GetHeader("User-Agent"),
+	}
+	status, err := h.engine.TriggerWebhook(token, payload, meta)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "triggered"})
+	c.JSON(http.StatusOK, gin.H{"message": "triggered", "status": status})
+}
+
+// ListWebhookLogs 查询 Webhook 调用日志
+func (h *AutomationHandler) ListWebhookLogs(c *gin.Context) {
+	id := c.Param("id")
+	var logs []models.AutomationWebhookLog
+	if err := utils.DB.Where("automation_id = ?", id).Order("created_at DESC").Limit(100).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }

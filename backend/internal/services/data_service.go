@@ -414,6 +414,56 @@ func normalizeRelationIDs(value interface{}) []string {
 	return ids
 }
 
+func normalizeStringValues(value interface{}) []string {
+	values := []string{}
+	add := func(item string) {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			values = append(values, item)
+		}
+	}
+
+	switch v := value.(type) {
+	case string:
+		if strings.HasPrefix(v, "[") {
+			var items []string
+			if err := json.Unmarshal([]byte(v), &items); err == nil {
+				for _, item := range items {
+					add(item)
+				}
+				return values
+			}
+		}
+		for _, item := range strings.Split(v, ",") {
+			add(item)
+		}
+	case []string:
+		for _, item := range v {
+			add(item)
+		}
+	case []interface{}:
+		for _, item := range v {
+			add(fmt.Sprintf("%v", item))
+		}
+	}
+	return values
+}
+
+func shouldNormalizeStringArray(field *models.Field, value interface{}) bool {
+	if field.Type == "multi_select" {
+		return true
+	}
+	if field.Type != "select" {
+		return false
+	}
+	switch value.(type) {
+	case []string, []interface{}:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *dataService) UpdateData(modelName, id string, data map[string]interface{}, userID string) error {
 	model, err := s.modelRepo.GetByName(modelName)
 	if err != nil {
@@ -552,6 +602,10 @@ func (s *dataService) validateData(model *models.Model, data map[string]interfac
 			if err := s.validateFieldType(field, value); err != nil {
 				return err
 			}
+			if shouldNormalizeStringArray(field, value) {
+				values := normalizeStringValues(value)
+				data[field.Name] = strings.Join(values, ",")
+			}
 			if field.Type == "relation" {
 				ids := normalizeRelationIDs(value)
 				if len(ids) > 1 {
@@ -583,7 +637,14 @@ func (s *dataService) validateFieldType(field *models.Field, value interface{}) 
 		default:
 			return fmt.Errorf("field %s must be string or array", field.Name)
 		}
-	case "text", "textarea", "select", "multi_select", "email", "phone", "url", "file", "image", "country", "user":
+	case "select", "multi_select":
+		switch value.(type) {
+		case string, []string, []interface{}:
+			return nil
+		default:
+			return fmt.Errorf("field %s must be string or array", field.Name)
+		}
+	case "text", "textarea", "email", "phone", "url", "file", "image", "country", "user":
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("field %s must be string", field.Name)
 		}
@@ -633,6 +694,10 @@ func (s *dataService) validateDataTypes(model *models.Model, data map[string]int
 		if value, exists := data[field.Name]; exists && value != nil {
 			if err := s.validateFieldType(field, value); err != nil {
 				return err
+			}
+			if shouldNormalizeStringArray(field, value) {
+				values := normalizeStringValues(value)
+				data[field.Name] = strings.Join(values, ",")
 			}
 		}
 	}

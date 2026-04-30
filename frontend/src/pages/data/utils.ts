@@ -1,7 +1,7 @@
-﻿import dayjs from 'dayjs'
+import dayjs from 'dayjs'
 import { Field } from '../../api/model'
 
-// 鑾峰彇瀛楁鍥炬爣
+// 获取字段图标
 export const getFieldIcon = (type: string) => {
   const iconMap: Record<string, string> = {
     text: 'A',
@@ -78,7 +78,7 @@ export const formatFieldValue = (field: Field, value: any, users: any[] = []): a
       return value
   }
 }
-// 瑙ｆ瀽閫夐」
+// 解析选项
 export const parseOptions = (optionsStr: string): string[] => {
   try {
     return JSON.parse(optionsStr || '[]')

@@ -38,6 +38,19 @@ export interface AutomationRun {
   completed_at: string | null
 }
 
+export interface AutomationWebhookLog {
+  id: string
+  automation_id: string
+  webhook_token: string
+  idempotency_key: string
+  status: 'accepted' | 'duplicate' | 'failed'
+  message: string
+  payload: string
+  remote_ip: string
+  user_agent: string
+  created_at: string
+}
+
 export interface AutomationStats {
   run_count: number
   success_count: number
@@ -68,6 +81,9 @@ export const automationApi = {
 
   listRuns: (id: string, status?: string) =>
     request.get<any, { runs: AutomationRun[] }>(`/automations/${id}/runs`, { params: status ? { status } : {} }),
+
+  listWebhookLogs: (id: string) =>
+    request.get<any, { logs: AutomationWebhookLog[] }>(`/automations/${id}/webhook-logs`),
 
   getStats: (id: string) =>
     request.get<any, AutomationStats>(`/automations/${id}/stats`),

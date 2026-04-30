@@ -75,7 +75,7 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
           onChange={onChange}
           addonBefore={currencyCode}
           style={{ width: '100%', ...style }}
-          placeholder={`杈撳叆${field.display_name}`}
+          placeholder={`输入${field.display_name}`}
         />
       )
 
@@ -85,7 +85,7 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
           value={value || ''}
           onChange={e => onChange(e.target.value)}
           style={style}
-          placeholder={`杈撳叆${field.display_name}`}
+          placeholder={`输入${field.display_name}`}
         />
       )
 

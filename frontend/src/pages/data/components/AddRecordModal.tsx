@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Tag, Upload, Image } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import { Field } from '../../../api/model'
@@ -108,7 +108,7 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
                 const code = config.currency || 'CNY'
                 const currency = currencies.find(item => item.code === code)
                 return currency?.symbol || code
-              })()} />
+              })()} placeholder={`请输入${field.display_name}`} />
             ) : field.type === 'country' ? (
               <Select showSearch placeholder="请选择国家" filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
                 {countries.map(country => (
@@ -118,9 +118,9 @@ export const AddRecordModalComponent: React.FC<AddRecordModalProps> = ({
                 ))}
               </Select>
             ) : field.type === 'date' ? (
-              <DatePicker style={{ width: '100%' }} />
+              <DatePicker style={{ width: '100%' }} placeholder="请选择日期" />
             ) : field.type === 'datetime' ? (
-              <DatePicker showTime style={{ width: '100%' }} />
+              <DatePicker showTime style={{ width: '100%' }} placeholder="请选择日期时间" />
             ) : field.type === 'file' ? (
               <Upload
                 action="/api/upload"

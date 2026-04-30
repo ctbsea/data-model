@@ -1417,6 +1417,7 @@ const Data = () => {
         record={null}
         model={model}
         fields={fields}
+        initialUsers={users}
         onClose={() => {
           setAddRecordModalVisible(false)
         }}
@@ -1519,6 +1520,7 @@ const Data = () => {
         record={currentRecord}
         model={model}
         fields={fields}
+        initialUsers={users}
         onClose={() => {
           setRecordDetailVisible(false)
           setCurrentRecord(null)

@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dmdp/platform/internal/config"
 	"github.com/dmdp/platform/internal/models"
+	"github.com/dmdp/platform/internal/utils"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"gopkg.in/gomail.v2"
@@ -23,7 +27,7 @@ import (
 type TriggerConfig struct {
 	// record_create | record_update | record_delete | record_match | scheduled
 	Type       string             `json:"type"`
-	Logic      string             `json:"logic"`      // "and" (default) | "or"
+	Logic      string             `json:"logic"` // "and" (default) | "or"
 	Conditions []TriggerCondition `json:"conditions"`
 	Schedule   *ScheduleConfig    `json:"schedule"`
 	// legacy UI fields for scheduled trigger
@@ -43,8 +47,10 @@ type ScheduleConfig struct {
 }
 
 type ActionConfig struct {
-	Type   string                 `json:"type"`
-	Config map[string]interface{} `json:"config"`
+	Type            string                 `json:"type"`
+	Config          map[string]interface{} `json:"config"`
+	OnFailure       string                 `json:"on_failure"`
+	ContinueOnError bool                   `json:"continue_on_error"`
 }
 
 // StepLog records per-action execution result
@@ -62,8 +68,14 @@ type AutomationEngine interface {
 	Start() error
 	Stop()
 	TriggerEvent(eventType, modelName, recordID string, recordData map[string]interface{})
-	TriggerWebhook(token string, payload map[string]interface{}) error
+	TriggerWebhook(token string, payload map[string]interface{}, meta WebhookMeta) (string, error)
 	ReloadAutomation(automationID string)
+}
+
+type WebhookMeta struct {
+	IdempotencyKey string
+	RemoteIP       string
+	UserAgent      string
 }
 
 // --- Implementation ---
@@ -110,16 +122,53 @@ func (e *automationEngine) TriggerEvent(eventType, modelName, recordID string, r
 	go e.processEvent(eventType, modelName, recordID, recordData)
 }
 
-func (e *automationEngine) TriggerWebhook(token string, payload map[string]interface{}) error {
+func (e *automationEngine) TriggerWebhook(token string, payload map[string]interface{}, meta WebhookMeta) (string, error) {
 	var automation models.Automation
 	if err := e.db.Where("webhook_token = ? AND enabled = true", token).First(&automation).Error; err != nil {
-		return fmt.Errorf("webhook: invalid token or automation disabled")
+		_ = e.createWebhookLog("", token, meta, payload, "failed", "invalid token or automation disabled")
+		return "failed", fmt.Errorf("webhook: invalid token or automation disabled")
+	}
+	if meta.IdempotencyKey != "" {
+		var count int64
+		e.db.Model(&models.AutomationWebhookLog{}).
+			Where("automation_id = ? AND idempotency_key = ? AND status IN ?", automation.ID, meta.IdempotencyKey, []string{"accepted", "duplicate"}).
+			Count(&count)
+		if count > 0 {
+			_ = e.createWebhookLog(automation.ID, token, meta, payload, "duplicate", "duplicate idempotency key")
+			return "duplicate", nil
+		}
+	}
+	if err := e.createWebhookLog(automation.ID, token, meta, payload, "accepted", "triggered"); err != nil {
+		return "failed", err
 	}
 	go e.executeAutomationWithRetry(automation, payload, 0)
-	return nil
+	return "accepted", nil
 }
 
-func (e *automationEngine) ReloadAutomation(automationID string) {	e.mu.Lock()
+func (e *automationEngine) createWebhookLog(automationID, token string, meta WebhookMeta, payload map[string]interface{}, status, message string) error {
+	payloadJSON := "{}"
+	if payload != nil {
+		if b, err := json.Marshal(payload); err == nil {
+			payloadJSON = string(b)
+		}
+	}
+	log := models.AutomationWebhookLog{
+		ID:             uuid.New().String(),
+		AutomationID:   automationID,
+		WebhookToken:   token,
+		IdempotencyKey: meta.IdempotencyKey,
+		Status:         status,
+		Message:        message,
+		Payload:        payloadJSON,
+		RemoteIP:       meta.RemoteIP,
+		UserAgent:      meta.UserAgent,
+		CreatedAt:      time.Now(),
+	}
+	return e.db.Create(&log).Error
+}
+
+func (e *automationEngine) ReloadAutomation(automationID string) {
+	e.mu.Lock()
 	if entryID, ok := e.cronIDs[automationID]; ok {
 		e.cron.Remove(entryID)
 		delete(e.cronIDs, automationID)
@@ -179,12 +228,15 @@ func (e *automationEngine) executeAutomationWithRetry(automation models.Automati
 			_ = r
 		}
 	}()
+	triggerData = e.enrichTriggerData(automation.ModelID, triggerData)
 
 	now := time.Now()
 	run := models.AutomationRun{
 		ID:           uuid.New().String(),
 		AutomationID: automation.ID,
 		Status:       "running",
+		TriggerData:  "{}",
+		Steps:        "[]",
 		RetryCount:   attempt,
 		StartedAt:    now,
 	}
@@ -219,6 +271,9 @@ func (e *automationEngine) executeAutomationWithRetry(automation models.Automati
 			step.Result = result
 		}
 		steps = append(steps, step)
+		if err != nil && shouldStopOnActionFailure(action) {
+			break
+		}
 	}
 
 	if hasError && attempt < maxRetries-1 {
@@ -265,8 +320,8 @@ func (e *automationEngine) finalizeRun(runID, automationID, status string, steps
 		countCol = "fail_count"
 	}
 	e.db.Model(&models.Automation{}).Where("id = ?", automationID).Updates(map[string]interface{}{
-		"run_count":  gorm.Expr("run_count + 1"),
-		countCol:     gorm.Expr(countCol + " + 1"),
+		"run_count": gorm.Expr("run_count + 1"),
+		countCol:    gorm.Expr(countCol + " + 1"),
 	})
 }
 
@@ -287,6 +342,17 @@ func (e *automationEngine) executeAction(action ActionConfig, triggerData map[st
 	}
 }
 
+func shouldStopOnActionFailure(action ActionConfig) bool {
+	if action.ContinueOnError {
+		return false
+	}
+	policy := strings.ToLower(strings.TrimSpace(action.OnFailure))
+	if policy == "" && action.Config != nil {
+		policy = strings.ToLower(strings.TrimSpace(stringVal(action.Config, "on_failure", "")))
+	}
+	return policy == "" || policy == "stop" || policy == "terminate"
+}
+
 func (e *automationEngine) executeAPICall(cfg map[string]interface{}, triggerData map[string]interface{}) (string, error) {
 	method := stringVal(cfg, "method", "POST")
 	rawURL := stringVal(cfg, "url", "")
@@ -298,6 +364,9 @@ func (e *automationEngine) executeAPICall(cfg map[string]interface{}, triggerDat
 
 	rawURL = interpolate(rawURL, triggerData)
 	body = interpolate(body, triggerData)
+	if err := validateAutomationURL(rawURL); err != nil {
+		return "", err
+	}
 
 	var bodyReader io.Reader
 	if body != "" {
@@ -329,6 +398,45 @@ func (e *automationEngine) executeAPICall(cfg map[string]interface{}, triggerDat
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 	return fmt.Sprintf("HTTP %d", resp.StatusCode), nil
+}
+
+func validateAutomationURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("api_call: only http/https URLs are allowed")
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("api_call: host is required")
+	}
+	if os.Getenv("AUTOMATION_ALLOW_PRIVATE_NETWORK") == "true" {
+		return nil
+	}
+	ips, err := net.LookupIP(parsed.Hostname())
+	if err != nil {
+		return err
+	}
+	for _, ip := range ips {
+		if isPrivateAutomationIP(ip) {
+			return fmt.Errorf("api_call: private or local network URLs are blocked")
+		}
+	}
+	return nil
+}
+
+func isPrivateAutomationIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4[0] == 169 && ip4[1] == 254
+	}
+	return false
 }
 
 func (e *automationEngine) executeSendEmail(cfg map[string]interface{}, triggerData map[string]interface{}) (string, error) {
@@ -408,21 +516,61 @@ func (e *automationEngine) executeCreateRecord(cfg map[string]interface{}, trigg
 		return "", fmt.Errorf("create_record: fields is required")
 	}
 
-	interpolated := make(map[string]interface{}, len(fields)+1)
-	for k, v := range fields {
-		interpolated[k] = interpolate(fmt.Sprintf("%v", v), triggerData)
-	}
-	interpolated["id"] = uuid.New().String()
-
 	var mdl models.Model
-	if err := e.db.Where("name = ?", modelName).First(&mdl).Error; err != nil {
+	if err := e.db.Preload("Fields").Where("name = ?", modelName).First(&mdl).Error; err != nil {
 		return "", fmt.Errorf("create_record: model %q not found", modelName)
 	}
 
-	if err := e.db.Table(mdl.TableName).Create(interpolated).Error; err != nil {
+	interpolated := make(map[string]interface{}, len(fields)+1)
+	for k, v := range fields {
+		value := interpolate(fmt.Sprintf("%v", v), triggerData)
+		if isAutoCurrentRelationField(&mdl, k, value, triggerData) {
+			value = fmt.Sprintf("%v", triggerData["id"])
+		}
+		interpolated[k] = value
+	}
+	interpolated["id"] = uuid.New().String()
+
+	if err := e.insertDynamicRecord(mdl.TableName, interpolated); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("created record in %s", modelName), nil
+}
+
+func (e *automationEngine) insertDynamicRecord(tableName string, data map[string]interface{}) error {
+	quotedTable, err := utils.QuoteSQLIdentifier(tableName)
+	if err != nil {
+		return err
+	}
+	fields := make([]string, 0, len(data))
+	placeholders := make([]string, 0, len(data))
+	values := make([]interface{}, 0, len(data))
+	for field, value := range data {
+		quotedField, err := utils.QuoteSQLIdentifier(field)
+		if err != nil {
+			return err
+		}
+		fields = append(fields, quotedField)
+		placeholders = append(placeholders, "?")
+		values = append(values, value)
+	}
+	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", quotedTable, strings.Join(fields, ", "), strings.Join(placeholders, ", "))
+	return e.db.Exec(sql, values...).Error
+}
+
+func isAutoCurrentRelationField(model *models.Model, fieldName, value string, triggerData map[string]interface{}) bool {
+	if triggerData == nil || triggerData["id"] == nil || strings.TrimSpace(fmt.Sprintf("%v", triggerData["id"])) == "" {
+		return false
+	}
+	if strings.TrimSpace(value) != "" {
+		return false
+	}
+	for _, field := range model.Fields {
+		if field.Type == "relation" && (field.Name == fieldName || field.ID == fieldName || field.DisplayName == fieldName) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *automationEngine) executeDeleteRecord(cfg map[string]interface{}, triggerData map[string]interface{}) (string, error) {
@@ -629,6 +777,35 @@ func interpolate(template string, data map[string]interface{}) string {
 		template = strings.ReplaceAll(template, "{{"+k+"}}", fmt.Sprintf("%v", v))
 	}
 	return template
+}
+
+func (e *automationEngine) enrichTriggerData(modelID string, data map[string]interface{}) map[string]interface{} {
+	if data == nil {
+		data = map[string]interface{}{}
+	}
+	if modelID == "" {
+		return data
+	}
+	var model models.Model
+	if err := e.db.Preload("Fields").First(&model, "id = ?", modelID).Error; err != nil {
+		return data
+	}
+	for _, field := range model.Fields {
+		value, ok := data[field.Name]
+		if !ok && field.ID != "" {
+			value, ok = data[field.ID]
+		}
+		if !ok {
+			continue
+		}
+		if field.DisplayName != "" {
+			data[field.DisplayName] = value
+		}
+		if field.Name != "" {
+			data[field.Name] = value
+		}
+	}
+	return data
 }
 
 func stringVal(m map[string]interface{}, key, defaultVal string) string {

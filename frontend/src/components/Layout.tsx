@@ -6,6 +6,7 @@ import {
   DatabaseOutlined,
   PlusOutlined,
   UserOutlined,
+  BookOutlined,
   LogoutOutlined,
   MailOutlined,
   SettingOutlined,
@@ -44,7 +45,7 @@ const Layout = () => {
     token: { colorBgContainer },
   } = theme.useToken()
 
-  // 获取未读邮件数量
+  // 鑾峰彇鏈閭欢鏁伴噺
   const fetchUnreadCount = async () => {
     try {
       const res = await emailApi.getUnreadCount()
@@ -59,7 +60,7 @@ const Layout = () => {
     fetchModels()
     fetchCurrentUser()
     fetchPanels()
-    // 不在 Layout 中自动获取未读邮件数量,由具体页面根据需要调用
+    // 不在 Layout 中自动获取未读邮件数量，由具体页面按需调用
   }, [])
 
   const fetchModels = async () => {
@@ -96,7 +97,7 @@ const Layout = () => {
   }
 
   const handleMenuClick = ({ key }: { key: string }) => {
-    if (key === '/dashboard' || key === '/model-list') {
+    if (key === '/dashboard' || key === '/model-list' || key === '/dictionaries') {
       navigate(key)
     } else if (key.startsWith('/data/')) {
       navigate(key)
@@ -186,6 +187,11 @@ const Layout = () => {
       icon: <DatabaseOutlined />,
       label: '模型模板',
     },
+    {
+      key: '/dictionaries',
+      icon: <BookOutlined />,
+      label: '字典功能',
+    },
   ]
 
   // 模型列表菜单项
@@ -212,7 +218,7 @@ const Layout = () => {
         width={240}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          {/* Logo区域 */}
+          {/* Logo鍖哄煙 */}
           <div style={{ 
             height: 64, 
             display: 'flex', 
@@ -240,7 +246,7 @@ const Layout = () => {
             />
           </div>
 
-          {/* 分割线 */}
+          {/* 分割线*/}
           <div style={{ 
             height: 1, 
             background: '#f0f0f0', 
@@ -282,7 +288,7 @@ const Layout = () => {
             </div>
           )}
 
-          {/* 分割线 */}
+          {/* 分割线*/}
           <div style={{ 
             height: 1, 
             background: '#f0f0f0', 

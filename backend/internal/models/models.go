@@ -312,6 +312,20 @@ type AutomationRun struct {
 	CompletedAt  *time.Time `json:"completed_at"`
 }
 
+// AutomationWebhookLog 记录 Webhook 调用与幂等处理结果
+type AutomationWebhookLog struct {
+	ID             string    `json:"id" gorm:"primaryKey;size:64"`
+	AutomationID   string    `json:"automation_id" gorm:"index;size:64"`
+	WebhookToken   string    `json:"webhook_token" gorm:"index;size:64;not null"`
+	IdempotencyKey string    `json:"idempotency_key" gorm:"size:128;index"`
+	Status         string    `json:"status" gorm:"size:20"`
+	Message        string    `json:"message" gorm:"size:512"`
+	Payload        string    `json:"payload" gorm:"type:json"`
+	RemoteIP       string    `json:"remote_ip" gorm:"size:64"`
+	UserAgent      string    `json:"user_agent" gorm:"size:512"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 // DictionaryItem 字典项（货币、国家等）
 type DictionaryItem struct {
 	ID        string         `json:"id" gorm:"primaryKey;size:64"`
