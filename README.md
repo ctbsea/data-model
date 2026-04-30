@@ -86,35 +86,6 @@ npm run dev
 - 后端 API: http://localhost:8080
 - 健康检查: http://localhost:8080/health
 
-## 开发进度
-
-### 第一阶段: 核心基础 (进行中)
-- [x] 项目架构搭建
-  - [x] 后端项目初始化
-  - [x] 数据库初始化
-  - [x] 前端项目初始化
-  - [x] Docker 开发环境配置
-- [ ] 用户认证与权限模块
-- [ ] 数据模型管理模块
-- [ ] 动态数据 CRUD 功能
-
-### 第二阶段: 界面设计器
-- [ ] 界面设计器核心功能
-- [ ] 预置组件库开发
-- [ ] 页面路由配置
-- [ ] 动态表单和表格组件
-
-### 第三阶段: 工作流引擎
-- [ ] 工作流设计器
-- [ ] 工作流执行引擎
-- [ ] 工作流实例管理
-- [ ] 工作流高级功能
-
-### 第四阶段: API 与优化
-- [ ] API 自动生成完善
-- [ ] 性能优化
-- [ ] 测试与文档
-
 ## 环境变量
 
 复制 `.env.example` 到 `.env` 并修改配置:
@@ -122,7 +93,20 @@ npm run dev
 ```bash
 cp .env.example .env
 ```
+## 界面
 
+![alt text](image.png)
+
+![alt text](image-1.png)
+
+![alt text](image-2.png)
+
+![alt text](image-3.png)
+
+![alt text](image-4.png)
+
+![alt text](image-5.png)
 ## 许可证
+
 
 MIT
