@@ -1,10 +1,11 @@
 ﻿import React, { useEffect, useRef, useState } from 'react'
-import { Spin, Button, Tag, Dropdown, Select, Input, DatePicker, Badge, Modal, Upload, Image } from 'antd'
-import { DeleteOutlined, MoreOutlined, MailOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { Spin, Button, Tag, Dropdown, Select, Input, DatePicker, Badge, Modal, Upload, Image, Radio } from 'antd'
+import { DeleteOutlined, MoreOutlined, MailOutlined, PlusOutlined, UploadOutlined, PushpinFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { Field, Model } from '../../api/model'
 import { dictionaryApi, DictionaryItem } from '../../api/dictionary'
 import { getFieldIcon, getFieldColor, TAG_COLORS } from './utils'
+import { getDictionaryItemsForField, getDictionaryItemLabel, parseFieldOptions } from '../../utils/dictionaryField'
 import type { MenuProps } from 'antd'
 
 const { Option } = Select
@@ -79,10 +80,15 @@ export const TableView: React.FC<TableViewProps> = ({
 }) => {
   const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
   const [countries, setCountries] = useState<DictionaryItem[]>([])
+  const [dictionaryItems, setDictionaryItems] = useState<DictionaryItem[]>([])
 
   useEffect(() => {
-    dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
-    dictionaryApi.list('country').then(res => setCountries(res.items || [])).catch(console.error)
+    dictionaryApi.list(undefined, true).then(res => {
+      const items = res.items || []
+      setDictionaryItems(items)
+      setCurrencies(items.filter(item => item.type === 'currency' && item.enabled !== false))
+      setCountries(items.filter(item => item.type === 'country' && item.enabled !== false))
+    }).catch(console.error)
   }, [])
 
   const handleHeaderScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -115,18 +121,8 @@ export const TableView: React.FC<TableViewProps> = ({
 
     if (isEditing) {
       if (field.type === 'select' || field.type === 'multi_select') {
-        let options: any[] = []
-        try {
-          let parsed = JSON.parse(field.options || '[]')
-          // 处理双重编码: ["[{...}]"] -> [{...}]
-          if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
-            parsed = JSON.parse(parsed[0])
-          }
-          options = parsed
-        } catch (e) {
-          console.error('Failed to parse options:', field.options)
-          options = []
-        }
+        const dictionaryOptions = getDictionaryItemsForField(field, dictionaryItems)
+        const options = dictionaryOptions.length ? dictionaryOptions : parseFieldOptions(field.options)
         // 新格式: [{label, color}]
         const hasColorConfig = Array.isArray(options) && options.length > 0 && options[0]?.label
         
@@ -169,7 +165,13 @@ export const TableView: React.FC<TableViewProps> = ({
             size="small"
             style={{ width: '100%' }}
           >
-            {hasColorConfig ? (
+            {dictionaryOptions.length ? (
+              dictionaryOptions.map(item => (
+                <Option key={item.code} value={item.code}>
+                  {getDictionaryItemLabel(item)}
+                </Option>
+              ))
+            ) : hasColorConfig ? (
               options.map((opt: any) => (
                 <Option key={opt.label} value={opt.label}>
                   <Tag color={opt.color} style={{ margin: 0 }}>{opt.label}</Tag>
@@ -242,6 +244,24 @@ export const TableView: React.FC<TableViewProps> = ({
           </Select>
         )
       }
+      if (field.type === 'boolean') {
+        return (
+          <Radio.Group
+            optionType="button"
+            buttonStyle="solid"
+            value={(editValue === true || editValue === 'true' || editValue === 1 || editValue === '1') ? 'true' : 'false'}
+            onChange={(event) => {
+              const value = event.target.value === 'true'
+              onEditChange(value)
+              onEditBlur(row.id, field.name, value)
+            }}
+            size="small"
+          >
+            <Radio.Button value="true">是</Radio.Button>
+            <Radio.Button value="false">否</Radio.Button>
+          </Radio.Group>
+        )
+      }
       if (field.type === 'date') {
         return (
           <DatePicker
@@ -307,12 +327,8 @@ export const TableView: React.FC<TableViewProps> = ({
     // 显示值
     if (field.type === 'select' || field.type === 'multi_select') {
       try {
-        let parsed = JSON.parse(field.options || '[]')
-        // 处理双重编码: ["[{...}]"] -> [{...}]
-        if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
-          parsed = JSON.parse(parsed[0])
-        }
-        const options = parsed
+        const dictionaryOptions = getDictionaryItemsForField(field, dictionaryItems)
+        const options = dictionaryOptions.length ? dictionaryOptions : parseFieldOptions(field.options)
         // 新格式: [{label, color}]
         const hasColorConfig = Array.isArray(options) && options.length > 0 && options[0]?.label
         
@@ -322,6 +338,10 @@ export const TableView: React.FC<TableViewProps> = ({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {values.map((v: string, i: number) => {
                 const trimmed = v.trim()
+                if (dictionaryOptions.length) {
+                  const item = dictionaryOptions.find(option => option.code === trimmed)
+                  return <Tag key={i} color="blue" style={{ margin: 0 }}>{item ? getDictionaryItemLabel(item) : trimmed}</Tag>
+                }
                 if (hasColorConfig) {
                   const opt = options.find((o: any) => o.label === trimmed)
                   return (
@@ -340,6 +360,10 @@ export const TableView: React.FC<TableViewProps> = ({
           )
         }
         if (value) {
+          if (dictionaryOptions.length) {
+            const item = dictionaryOptions.find(option => option.code === value)
+            return <Tag color="blue">{item ? getDictionaryItemLabel(item) : value}</Tag>
+          }
           if (hasColorConfig) {
             const opt = options.find((o: any) => o.label === value)
             return <Tag color={opt?.color || TAG_COLORS[0]}>{value}</Tag>
@@ -374,6 +398,11 @@ export const TableView: React.FC<TableViewProps> = ({
     if (field.type === 'country' && value) {
       const country = countries.find(item => item.code === value)
       return <Tag color="blue">{country?.icon} {country?.name_zh || value}{country?.name_en ? ` / ${country.name_en}` : ''}</Tag>
+    }
+
+    if (field.type === 'boolean') {
+      const checked = value === true || value === 'true'
+      return <Tag color={checked ? 'green' : 'default'}>{checked ? '是' : '否'}</Tag>
     }
 
     // 文件/图片字段显示
@@ -457,9 +486,12 @@ export const TableView: React.FC<TableViewProps> = ({
           <div style={{ display: 'flex', flexShrink: 0 }}>
             <div style={{ width: 50, padding: '12px', borderRight: '1px solid #e8e8e8', background: '#fafafa' }}>#</div>
             {fields.filter(f => visibleFields.includes(f.id!)).slice(0, frozenColumns).map((field, index) => (
-              <div key={field.id} style={{ width: columnWidths[field.id!] || 200, padding: '12px', borderRight: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', gap: 8, background: '#fafafa', position: 'relative' }}>
+              <div key={field.id} style={{ width: columnWidths[field.id!] || 200, padding: '12px', borderRight: '1px solid #dbeafe', display: 'flex', alignItems: 'center', gap: 8, background: 'linear-gradient(180deg, #eff6ff 0%, #fafafa 100%)', position: 'relative' }}>
                 <span style={{ width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `${getFieldColor(field.type)}20`, color: getFieldColor(field.type), borderRadius: 4, fontSize: 12 }}>{getFieldIcon(field.type)}</span>
                 <span style={{ flex: 1 }}>{field.display_name}</span>
+                <span title="冻结字段" style={{ width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: '#dbeafe', color: '#2563eb', boxShadow: 'inset 0 0 0 1px #bfdbfe' }}>
+                  <PushpinFilled style={{ fontSize: 12 }} />
+                </span>
                 <Dropdown menu={fieldMenu(field, index)} trigger={['click']}><Button type="text" size="small" icon={<MoreOutlined />} /></Dropdown>
                 <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize', zIndex: 1, background: resizing === field.id ? '#1890ff' : 'transparent' }} onMouseDown={(e) => onColumnResize(e, field.id!)} />
               </div>

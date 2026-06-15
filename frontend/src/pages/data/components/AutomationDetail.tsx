@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Descriptions, Drawer, Input, List, message, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Collapse, Descriptions, Drawer, Input, InputNumber, List, message, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
 import { CopyOutlined, DeleteOutlined, HistoryOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { automationApi, Automation, AutomationRun, AutomationWebhookLog, StepLog } from '../../../api/automation'
 import { modelApi, Model } from '../../../api/model'
@@ -7,6 +7,21 @@ import dayjs from 'dayjs'
 
 const { Option } = Select
 const { Text, Paragraph } = Typography
+
+const AUTOMATION_TEXT = {
+  scheduledScan: '\u5b9a\u65f6\u626b\u63cf\u8bb0\u5f55',
+  every: '\u6bcf',
+  minutes: '\u5206\u949f',
+  hours: '\u5c0f\u65f6',
+  days: '\u5929',
+  scanAndRun: '\u904d\u5386\u8bb0\u5f55\uff0c\u6ee1\u8db3\u6761\u4ef6\u5219\u6267\u884c',
+  selectField: '\u9009\u62e9\u5b57\u6bb5',
+  valuePlaceholder: '\u503c\uff0c\u652f\u6301 {{\u5b57\u6bb5\u540d}}',
+  runHistory: '\u8fd0\u884c\u5386\u53f2',
+  noRunRecords: '\u6682\u65e0\u8fd0\u884c\u8bb0\u5f55',
+  totalPrefix: '\u5171',
+  totalSuffix: '\u6761',
+}
 
 type FailurePolicy = 'stop' | 'continue'
 
@@ -23,6 +38,7 @@ interface TriggerCondition {
   field?: string
   operator?: string
   value?: string
+  valueUnit?: string
   scheduleInterval?: string
   scheduleValue?: number
 }
@@ -58,6 +74,14 @@ const DATE_OPERATORS = [
   { value: 'is_not_empty', label: '不为空' },
   { value: 'before', label: '早于' },
   { value: 'after', label: '晚于' },
+  { value: 'before_relative', label: '早于当前时间' },
+  { value: 'after_relative', label: '晚于当前时间' },
+]
+
+const RELATIVE_TIME_UNITS = [
+  { value: 'minutes', label: '分钟' },
+  { value: 'hours', label: '小时' },
+  { value: 'days', label: '天' },
 ]
 
 const SELECT_OPERATORS = [
@@ -106,6 +130,10 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
   const [actions, setActions] = useState<ActionItem[]>([])
   const [historyVisible, setHistoryVisible] = useState(false)
   const [runs, setRuns] = useState<AutomationRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(false)
+  const [runsPage, setRunsPage] = useState(1)
+  const [runsPageSize, setRunsPageSize] = useState(10)
+  const [runsTotal, setRunsTotal] = useState(0)
   const [models, setModels] = useState<Model[]>([])
   const [webhookToken, setWebhookToken] = useState('')
   const [webhookLogs, setWebhookLogs] = useState<AutomationWebhookLog[]>([])
@@ -212,6 +240,7 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
     if (type === 'scheduled') {
       trigger.scheduleInterval = 'minutes'
       trigger.scheduleValue = 30
+      trigger.operator = 'equals'
     }
     setTriggers([...triggers, trigger])
   }
@@ -242,14 +271,20 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
     setActions(next)
   }
 
-  const loadRuns = async () => {
+  const loadRuns = async (page = runsPage, pageSize = runsPageSize) => {
     if (!automation) return
+    setRunsLoading(true)
     try {
-      const res = await automationApi.listRuns(automation.id)
+      const res = await automationApi.listRuns(automation.id, { page, page_size: pageSize })
       setRuns(res.runs || [])
+      setRunsTotal(res.total || 0)
+      setRunsPage(res.page || page)
+      setRunsPageSize(res.page_size || pageSize)
       setHistoryVisible(true)
     } catch {
-      message.error('加载运行记录失败')
+      message.error('????????')
+    } finally {
+      setRunsLoading(false)
     }
   }
 
@@ -295,6 +330,7 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
     if (trigger.type === 'record_match') {
       const selectedField = fields.find(field => field.name === trigger.field || field.id === trigger.field)
       const operators = selectedField ? getFieldOperators(selectedField.type) : TEXT_OPERATORS
+      const isRelativeTime = trigger.operator === 'before_relative' || trigger.operator === 'after_relative'
       const needsValue = trigger.operator !== 'is_empty' && trigger.operator !== 'is_not_empty'
       return (
         <Card key={index} size="small" style={{ marginBottom: 8 }} extra={remove}>
@@ -303,17 +339,54 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
             <Select value={selectedField?.name || trigger.field} onChange={(value) => updateTrigger(index, { field: value, operator: 'equals', value: '' })} style={{ width: 180 }} placeholder="选择字段">
               {fields.map(field => <Option key={field.name} value={field.name}>{field.display_name || field.name}</Option>)}
             </Select>
-            <Select value={trigger.operator || 'equals'} onChange={(value) => updateTrigger(index, { operator: value })} style={{ width: 130 }}>
+            <Select value={trigger.operator || 'equals'} onChange={(value) => updateTrigger(index, { operator: value, value: value === 'before_relative' || value === 'after_relative' ? '30' : trigger.value, valueUnit: value === 'before_relative' || value === 'after_relative' ? (trigger.valueUnit || 'minutes') : undefined })} style={{ width: 130 }}>
               {operators.map(operator => <Option key={operator.value} value={operator.value}>{operator.label}</Option>)}
             </Select>
-            {needsValue && <Input value={trigger.value} onChange={(event) => updateTrigger(index, { value: event.target.value })} style={{ width: 180 }} placeholder="值，支持 {{字段名}}" />}
+            {needsValue && (isRelativeTime ? <Space.Compact>
+              <InputNumber min={1} value={Number(trigger.value || 30)} onChange={(value) => updateTrigger(index, { value: String(value || 1) })} style={{ width: 100 }} />
+              <Select value={trigger.valueUnit || 'minutes'} onChange={(value) => updateTrigger(index, { valueUnit: value })} style={{ width: 90 }}>
+                {RELATIVE_TIME_UNITS.map(unit => <Option key={unit.value} value={unit.value}>{unit.label}</Option>)}
+              </Select>
+            </Space.Compact> : <Input value={trigger.value} onChange={(event) => updateTrigger(index, { value: event.target.value })} style={{ width: 180 }} placeholder="值，支持 {{字段名}}" />)}
           </div>
         </Card>
       )
     }
 
     if (trigger.type === 'scheduled') {
-      return <Card key={index} size="small" style={{ marginBottom: 8 }} extra={remove}><Tag color="orange">定时任务</Tag><Space style={{ marginTop: 8 }}><Text>每</Text><Input type="number" value={trigger.scheduleValue} onChange={(event) => updateTrigger(index, { scheduleValue: Number(event.target.value) })} style={{ width: 80 }} min={1} /><Select value={trigger.scheduleInterval || 'minutes'} onChange={(value) => updateTrigger(index, { scheduleInterval: value })} style={{ width: 100 }}><Option value="minutes">分钟</Option><Option value="hours">小时</Option><Option value="days">天</Option></Select><Text>执行一次</Text></Space></Card>
+      const selectedField = fields.find(field => field.name === trigger.field || field.id === trigger.field)
+      const operators = selectedField ? getFieldOperators(selectedField.type) : TEXT_OPERATORS
+      const isRelativeTime = trigger.operator === 'before_relative' || trigger.operator === 'after_relative'
+      const needsValue = trigger.operator !== 'is_empty' && trigger.operator !== 'is_not_empty'
+      return (
+        <Card key={index} size="small" style={{ marginBottom: 8 }} extra={remove}>
+          <Tag color="orange">{AUTOMATION_TEXT.scheduledScan}</Tag>
+          <Space style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <Text>{AUTOMATION_TEXT.every}</Text>
+            <InputNumber min={1} value={trigger.scheduleValue || 30} onChange={(value) => updateTrigger(index, { scheduleValue: Number(value || 1) })} style={{ width: 80 }} />
+            <Select value={trigger.scheduleInterval || 'minutes'} onChange={(value) => updateTrigger(index, { scheduleInterval: value })} style={{ width: 100 }}>
+              <Option value="minutes">{AUTOMATION_TEXT.minutes}</Option>
+              <Option value="hours">{AUTOMATION_TEXT.hours}</Option>
+              <Option value="days">{AUTOMATION_TEXT.days}</Option>
+            </Select>
+            <Text>{AUTOMATION_TEXT.scanAndRun}</Text>
+          </Space>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <Select value={selectedField?.name || trigger.field} onChange={(value) => updateTrigger(index, { field: value, operator: 'equals', value: '' })} style={{ width: 180 }} placeholder={AUTOMATION_TEXT.selectField}>
+              {fields.map(field => <Option key={field.name} value={field.name}>{field.display_name || field.name}</Option>)}
+            </Select>
+            <Select value={trigger.operator || 'equals'} onChange={(value) => updateTrigger(index, { operator: value, value: value === 'before_relative' || value === 'after_relative' ? '30' : trigger.value, valueUnit: value === 'before_relative' || value === 'after_relative' ? (trigger.valueUnit || 'minutes') : undefined })} style={{ width: 130 }}>
+              {operators.map(operator => <Option key={operator.value} value={operator.value}>{operator.label}</Option>)}
+            </Select>
+            {needsValue && (isRelativeTime ? <Space.Compact>
+              <InputNumber min={1} value={Number(trigger.value || 30)} onChange={(value) => updateTrigger(index, { value: String(value || 1) })} style={{ width: 100 }} />
+              <Select value={trigger.valueUnit || 'minutes'} onChange={(value) => updateTrigger(index, { valueUnit: value })} style={{ width: 90 }}>
+                {RELATIVE_TIME_UNITS.map(unit => <Option key={unit.value} value={unit.value}>{unit.label}</Option>)}
+              </Select>
+            </Space.Compact> : <Input value={trigger.value} onChange={(event) => updateTrigger(index, { value: event.target.value })} style={{ width: 180 }} placeholder={AUTOMATION_TEXT.valuePlaceholder} />)}
+          </div>
+        </Card>
+      )
     }
     return null
   }
@@ -423,7 +496,7 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
         width={900}
         destroyOnClose
         extra={<Space><Button onClick={onClose}>取消</Button><Button type="primary" onClick={handleSave} loading={saving}>保存</Button></Space>}
-        footer={automation && <Space><Button icon={<HistoryOutlined />} onClick={loadRuns}>运行历史</Button><Button icon={<ReloadOutlined />} onClick={regenerateWebhookToken}>重置 Webhook</Button><Button onClick={loadWebhookLogs}>Webhook 日志</Button></Space>}
+        footer={automation && <Space><Button icon={<HistoryOutlined />} onClick={() => loadRuns(1, runsPageSize)}>运行历史</Button><Button icon={<ReloadOutlined />} onClick={regenerateWebhookToken}>重置 Webhook</Button><Button onClick={loadWebhookLogs}>Webhook 日志</Button></Space>}
       >
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
           <div style={{ display: 'flex', gap: 16 }}>
@@ -463,8 +536,21 @@ export const AutomationDetail: React.FC<AutomationDetailProps> = ({ visible, aut
         </Space>
       </Drawer>
 
-      <Modal title="运行历史" open={historyVisible} onCancel={() => setHistoryVisible(false)} footer={null} width={760}>
-        <List dataSource={runs} locale={{ emptyText: '暂无运行记录' }} renderItem={(run) => <List.Item><Collapse style={{ width: '100%' }} items={[{ key: run.id, label: <Space><ThunderboltOutlined style={{ color: run.status === 'success' ? '#52c41a' : '#ff4d4f' }} /><Tag color={run.status === 'success' ? 'green' : run.status === 'running' ? 'blue' : 'red'}>{run.status}</Tag><Text>{dayjs(run.started_at).format('YYYY-MM-DD HH:mm:ss')}</Text>{run.error && <Text type="danger">{run.error}</Text>}</Space>, children: renderRunDetail(run) }]} /></List.Item>} />
+      <Modal title={AUTOMATION_TEXT.runHistory} open={historyVisible} onCancel={() => setHistoryVisible(false)} footer={null} width={760}>
+        <List
+          loading={runsLoading}
+          dataSource={runs}
+          locale={{ emptyText: AUTOMATION_TEXT.noRunRecords }}
+          pagination={{
+            current: runsPage,
+            pageSize: runsPageSize,
+            total: runsTotal,
+            showSizeChanger: true,
+            showTotal: (total) => `${AUTOMATION_TEXT.totalPrefix} ${total} ${AUTOMATION_TEXT.totalSuffix}`,
+            onChange: (page, pageSize) => loadRuns(page, pageSize),
+          }}
+          renderItem={(run) => <List.Item><Collapse style={{ width: '100%' }} items={[{ key: run.id, label: <Space><ThunderboltOutlined style={{ color: run.status === 'success' ? '#52c41a' : '#ff4d4f' }} /><Tag color={run.status === 'success' ? 'green' : run.status === 'running' ? 'blue' : 'red'}>{run.status}</Tag><Text>{dayjs(run.started_at).format('YYYY-MM-DD HH:mm:ss')}</Text>{run.error && <Text type="danger">{run.error}</Text>}</Space>, children: renderRunDetail(run) }]} /></List.Item>}
+        />
       </Modal>
     </>
   )

@@ -79,8 +79,8 @@ export const automationApi = {
   toggleEnable: (id: string) =>
     request.put<any, Automation>(`/automations/${id}/toggle`),
 
-  listRuns: (id: string, status?: string) =>
-    request.get<any, { runs: AutomationRun[] }>(`/automations/${id}/runs`, { params: status ? { status } : {} }),
+  listRuns: (id: string, params?: { status?: string; page?: number; page_size?: number }) =>
+    request.get<any, { runs: AutomationRun[]; total: number; page: number; page_size: number }>(`/automations/${id}/runs`, { params }),
 
   listWebhookLogs: (id: string) =>
     request.get<any, { logs: AutomationWebhookLog[] }>(`/automations/${id}/webhook-logs`),

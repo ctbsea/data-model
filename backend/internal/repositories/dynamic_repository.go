@@ -152,12 +152,28 @@ func buildWhereClause(filter map[string]interface{}) ([]string, []interface{}, e
 			case "not_equals":
 				conditions = append(conditions, fmt.Sprintf("%s != ?", quotedField))
 				args = append(args, value)
+			case "greater_than":
+				conditions = append(conditions, fmt.Sprintf("%s > ?", quotedField))
+				args = append(args, value)
+			case "less_than":
+				conditions = append(conditions, fmt.Sprintf("%s < ?", quotedField))
+				args = append(args, value)
+			case "greater_or_equal":
+				conditions = append(conditions, fmt.Sprintf("%s >= ?", quotedField))
+				args = append(args, value)
+			case "less_or_equal":
+				conditions = append(conditions, fmt.Sprintf("%s <= ?", quotedField))
+				args = append(args, value)
 			case "contains":
 				conditions = append(conditions, fmt.Sprintf("%s ILIKE ?", quotedField))
 				args = append(args, fmt.Sprintf("%%%v%%", value))
 			case "not_contains":
 				conditions = append(conditions, fmt.Sprintf("%s NOT ILIKE ?", quotedField))
 				args = append(args, fmt.Sprintf("%%%v%%", value))
+			case "is_empty":
+				conditions = append(conditions, fmt.Sprintf("(%s IS NULL OR %s = '')", quotedField, quotedField))
+			case "is_not_empty":
+				conditions = append(conditions, fmt.Sprintf("(%s IS NOT NULL AND %s != '')", quotedField, quotedField))
 			case "date_range":
 				start, _ := filterMap["start"].(string)
 				end, _ := filterMap["end"].(string)
@@ -362,15 +378,28 @@ func (r *dynamicRepository) Aggregate(tableName string, opts *AggregateOptions) 
 }
 
 func (r *dynamicRepository) Update(tableName, id string, data map[string]interface{}) error {
-	if _, err := utils.QuoteSQLIdentifier(tableName); err != nil {
+	quotedTable, err := utils.QuoteSQLIdentifier(tableName)
+	if err != nil {
 		return err
 	}
-	for field := range data {
-		if _, err := utils.QuoteSQLIdentifier(field); err != nil {
+	if len(data) == 0 {
+		return nil
+	}
+
+	assignments := make([]string, 0, len(data))
+	values := make([]interface{}, 0, len(data)+1)
+	for field, value := range data {
+		quotedField, err := utils.QuoteSQLIdentifier(field)
+		if err != nil {
 			return err
 		}
+		assignments = append(assignments, fmt.Sprintf("%s = ?", quotedField))
+		values = append(values, value)
 	}
-	if err := r.db.Table(tableName).Where("id = ?", id).Updates(&data).Error; err != nil {
+	values = append(values, id)
+
+	sql := fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?", quotedTable, strings.Join(assignments, ", "), mustQuoteIdentifier("id"))
+	if err := r.db.Exec(sql, values...).Error; err != nil {
 		return fmt.Errorf("failed to update data: %w", err)
 	}
 	return nil
@@ -410,7 +439,8 @@ func (r *dynamicRepository) BatchCreate(tableName string, dataList []map[string]
 }
 
 func (r *dynamicRepository) BatchUpdate(tableName string, updates []BatchUpdateItem) error {
-	if _, err := utils.QuoteSQLIdentifier(tableName); err != nil {
+	quotedTable, err := utils.QuoteSQLIdentifier(tableName)
+	if err != nil {
 		return err
 	}
 	tx := r.db.Begin()
@@ -421,13 +451,23 @@ func (r *dynamicRepository) BatchUpdate(tableName string, updates []BatchUpdateI
 	}()
 
 	for _, update := range updates {
-		for field := range update.Data {
-			if _, err := utils.QuoteSQLIdentifier(field); err != nil {
+		if len(update.Data) == 0 {
+			continue
+		}
+		assignments := make([]string, 0, len(update.Data))
+		values := make([]interface{}, 0, len(update.Data)+1)
+		for field, value := range update.Data {
+			quotedField, err := utils.QuoteSQLIdentifier(field)
+			if err != nil {
 				tx.Rollback()
 				return err
 			}
+			assignments = append(assignments, fmt.Sprintf("%s = ?", quotedField))
+			values = append(values, value)
 		}
-		if err := tx.Table(tableName).Where("id = ?", update.ID).Updates(&update.Data).Error; err != nil {
+		values = append(values, update.ID)
+		sql := fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?", quotedTable, strings.Join(assignments, ", "), mustQuoteIdentifier("id"))
+		if err := tx.Exec(sql, values...).Error; err != nil {
 			tx.Rollback()
 			return fmt.Errorf("failed to batch update data: %w", err)
 		}

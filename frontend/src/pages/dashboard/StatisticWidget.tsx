@@ -20,6 +20,12 @@ interface StatisticWidgetProps {
 
 const COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444']
 
+const getFieldLabel = (fields: Field[], fieldName?: string) => {
+  if (!fieldName) return ''
+  const field = fields.find(item => item.name === fieldName || item.id === fieldName)
+  return field?.display_name || fieldName
+}
+
 const TIME_PRESETS = [
   { label: '最近7天', value: '7d' },
   { label: '最近30天', value: '30d' },
@@ -185,10 +191,11 @@ export const StatisticWidget: React.FC<StatisticWidgetProps> = ({
     if (v === null) return '--'
     if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
     if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`
-    return config.aggregation === 'avg' ? v.toFixed(2) : String(Math.round(v))
+              {config.aggregation === 'avg' && `${fieldLabel} ???`}
   }
 
   const timeRangeLabel = getTimeRangeLabel(config.timeRange)
+  const fieldLabel = config.aggregation !== 'count' ? getFieldLabel(modelFields, config.field) : ''
 
   const dateFields = modelFields.filter(f => !f.deleted && f.type === 'date')
 
@@ -221,6 +228,11 @@ export const StatisticWidget: React.FC<StatisticWidgetProps> = ({
           {timeRangeLabel && (
             <Tag icon={<ClockCircleOutlined />} color="blue" style={{ fontSize: 11 }}>
               {timeRangeLabel}
+            </Tag>
+          )}
+          {fieldLabel && (
+            <Tag color="geekblue" style={{ fontSize: 11 }}>
+              {fieldLabel}
             </Tag>
           )}
         </div>
@@ -267,11 +279,11 @@ export const StatisticWidget: React.FC<StatisticWidgetProps> = ({
             </div>
             <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 8 }}>
               {config.aggregation === 'count' && '记录总数'}
-              {config.aggregation === 'sum' && `${config.field || ''} 求和`}
-              {config.aggregation === 'avg' && `${config.field || ''} 平均值`}
-              {config.aggregation === 'min' && `${config.field || ''} 最小值`}
-              {config.aggregation === 'max' && `${config.field || ''} 最大值`}
-              {config.aggregation === 'distinct' && `${config.field || ''} 去重计数`}
+              {config.aggregation === 'sum' && `${fieldLabel} ??`}
+              {config.aggregation === 'avg' && `${fieldLabel} ???`}
+              {config.aggregation === 'min' && `${fieldLabel} ???`}
+              {config.aggregation === 'max' && `${fieldLabel} ???`}
+              {config.aggregation === 'distinct' && `${fieldLabel} ????`}
             </div>
           </>
         )}

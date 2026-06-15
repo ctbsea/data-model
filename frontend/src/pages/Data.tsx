@@ -4,9 +4,7 @@ import dayjs from 'dayjs'
 import KanbanView from '../components/KanbanView'
 import RecordDetail from '../components/RecordDetail'
 import EmailModal from '../components/EmailModal'
-import { RecordFormModal } from './data/components/RecordFormModal'
 import { AutomationModal } from './data/components/AutomationModal'
-import { commentApi } from '../api/comment'
 import {
   message,
   Spin,
@@ -14,17 +12,10 @@ import {
   Space,
   Drawer,
   Form,
-  Input,
-  InputNumber,
   Select,
-  Dropdown,
   Modal,
   Tag,
-  Checkbox,
-  Popover,
-  DatePicker,
   Radio,
-  Badge,
   Upload
 } from 'antd'
 import {
@@ -34,18 +25,12 @@ import {
   SortAscendingOutlined,
   DownloadOutlined,
   UploadOutlined,
-  SortDescendingOutlined,
-  GroupOutlined,
-  MoreOutlined,
   ClearOutlined,
   EditOutlined,
   ThunderboltOutlined,
-  ArrowLeftOutlined,
   SettingOutlined,
   LockOutlined,
   EyeInvisibleOutlined,
-  MailOutlined,
-  BellOutlined
 } from '@ant-design/icons'
 import { modelApi, Model, Field } from '../api/model'
 import { dataApi } from '../api/data'
@@ -57,32 +42,11 @@ import { useAuthStore } from '../stores/authStore'
 import {
   TableView,
   CalendarView,
-  AddRecordModal,
-  FilterModal,
-  getFieldIcon,
-  getFieldColor,
-  AddFieldPopover,
-  EditFieldDrawer,
   FieldModal,
   FieldConfigDrawer,
   RelationSelectModal,
-  AddRecordModalComponent,
   FilterModalComponent,
-  SortModalComponent,
-  FieldEditor,
-  FieldDisplay,
-  useDataState,
-  useEditState,
-  useFilterSortState,
-  useViewState,
-  useTableState,
-  useRelationState,
-  createRecord,
-  updateRecord,
-  deleteRecord,
-  batchDeleteRecords,
-  exportToCSV,
-  importFromCSV
+  SortModalComponent
 } from './data/index'
 
 const { Option } = Select
@@ -150,6 +114,7 @@ const Data = () => {
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [addRecordModalVisible, setAddRecordModalVisible] = useState(false)
+  const [addRecordInitialValues, setAddRecordInitialValues] = useState<Record<string, any> | undefined>(undefined)
   const [automationModalVisible, setAutomationModalVisible] = useState(false)
   const [addRecordForm] = Form.useForm()
   const headerScrollRef = useRef<HTMLDivElement>(null)
@@ -1273,6 +1238,10 @@ const Data = () => {
             }
             reloadData()
           }}
+          onAddRecord={(initialValues) => {
+            setAddRecordInitialValues(initialValues)
+            setAddRecordModalVisible(true)
+          }}
         />
       )}
 
@@ -1367,8 +1336,10 @@ const Data = () => {
               const cellValue = row[field.name]
               if (field.type === 'multi_select' && typeof cellValue === 'string' && cellValue) {
                 setEditValue(cellValue.split(','))
+              } else if (field.type === 'boolean') {
+                setEditValue(cellValue === true || cellValue === 'true' || cellValue === 1 || cellValue === '1')
               } else {
-                setEditValue(cellValue || '')
+                setEditValue(cellValue ?? '')
               }
             }
           }}
@@ -1418,11 +1389,14 @@ const Data = () => {
         model={model}
         fields={fields}
         initialUsers={users}
+        initialValues={addRecordInitialValues}
         onClose={() => {
           setAddRecordModalVisible(false)
+          setAddRecordInitialValues(undefined)
         }}
         onUpdate={() => {
           fetchData()
+          setAddRecordInitialValues(undefined)
         }}
       />
 

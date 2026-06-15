@@ -2,6 +2,7 @@
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import { dictionaryApi, DictionaryItem } from '../api/dictionary'
+import { buildDictionaryTypes, DICTIONARY_TYPE_META } from '../utils/dictionaryField'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -18,32 +19,30 @@ type DictionaryFormValues = {
   enabled?: boolean
 }
 
-const BUILTIN_TYPES = [
-  { value: 'currency', label: '货币' },
-  { value: 'country', label: '国家' },
-]
+type DictionaryTypeFormValues = {
+  code: string
+  name: string
+  name_zh?: string
+  name_en?: string
+  icon?: string
+  sort?: number
+  enabled?: boolean
+}
 
 const Dictionaries: React.FC = () => {
   const [items, setItems] = useState<DictionaryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [currentType, setCurrentType] = useState<string>('currency')
   const [modalVisible, setModalVisible] = useState(false)
+  const [typeModalVisible, setTypeModalVisible] = useState(false)
   const [editingItem, setEditingItem] = useState<DictionaryItem | null>(null)
   const [form] = Form.useForm<DictionaryFormValues>()
+  const [typeForm] = Form.useForm<DictionaryTypeFormValues>()
 
-  const dictionaryTypes = useMemo(() => {
-    const fromItems = Array.from(new Set(items.map(item => item.type))).filter(Boolean)
-    const merged = [...BUILTIN_TYPES]
-    fromItems.forEach(type => {
-      if (!merged.some(item => item.value === type)) {
-        merged.push({ value: type, label: type })
-      }
-    })
-    return merged
-  }, [items])
+  const dictionaryTypes = useMemo(() => buildDictionaryTypes(items), [items])
 
   const filteredItems = useMemo(() => (
-    currentType ? items.filter(item => item.type === currentType) : items
+    currentType ? items.filter(item => item.type === currentType) : items.filter(item => item.type !== DICTIONARY_TYPE_META)
   ), [items, currentType])
 
   const loadItems = async () => {
@@ -116,6 +115,31 @@ const Dictionaries: React.FC = () => {
     } catch (error: any) {
       if (error?.errorFields) return
       message.error(error.response?.data?.error || '保存失败')
+    }
+  }
+
+  const handleCreateType = async () => {
+    try {
+      const values = await typeForm.validateFields()
+      const code = values.code.trim()
+      await dictionaryApi.create({
+        type: DICTIONARY_TYPE_META,
+        code,
+        name: values.name,
+        name_zh: values.name_zh || values.name,
+        name_en: values.name_en || values.name,
+        icon: values.icon,
+        sort: values.sort ?? 0,
+        enabled: values.enabled ?? true,
+      })
+      message.success('字典类型已创建')
+      setCurrentType(code)
+      setTypeModalVisible(false)
+      typeForm.resetFields()
+      loadItems()
+    } catch (error: any) {
+      if (error?.errorFields) return
+      message.error(error.response?.data?.error || '创建字典类型失败')
     }
   }
 
@@ -198,6 +222,7 @@ const Dictionaries: React.FC = () => {
               {dictionaryTypes.map(type => <Option key={type.value} value={type.value}>{type.label}</Option>)}
             </Select>
             <Button icon={<ReloadOutlined />} onClick={loadItems}>刷新</Button>
+            <Button icon={<PlusOutlined />} onClick={() => setTypeModalVisible(true)}>新增类型</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>新增字典项</Button>
           </Space>
         }
@@ -223,7 +248,7 @@ const Dictionaries: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Form.Item label="字典类型" name="type" rules={[{ required: true, message: '请输入字典类型' }]}>
-            <Select showSearch placeholder="选择或输入类型" options={dictionaryTypes} />
+            <Select showSearch placeholder="选择类型" options={dictionaryTypes} />
           </Form.Item>
           <Form.Item label="编码" name="code" rules={[{ required: true, message: '请输入编码' }]}>
             <Input placeholder="如 CNY、CN、status" />
@@ -253,6 +278,42 @@ const Dictionaries: React.FC = () => {
               <Switch />
             </Form.Item>
           </Space>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新增字典类型"
+        open={typeModalVisible}
+        onCancel={() => {
+          setTypeModalVisible(false)
+          typeForm.resetFields()
+        }}
+        onOk={handleCreateType}
+      >
+        <Form form={typeForm} layout="vertical" initialValues={{ enabled: true, sort: 0 }}>
+          <Form.Item label="类型编码" name="code" rules={[{ required: true, message: '请输入类型编码' }]}>
+            <Input placeholder="如 industry、status、product_type" />
+          </Form.Item>
+          <Form.Item label="类型名称" name="name" rules={[{ required: true, message: '请输入类型名称' }]}>
+            <Input placeholder="如 行业、状态、产品类型" />
+          </Form.Item>
+          <Form.Item label="中文名称" name="name_zh">
+            <Input placeholder="默认同类型名称" />
+          </Form.Item>
+          <Form.Item label="英文名称" name="name_en">
+            <Input placeholder="如 Industry、Status" />
+          </Form.Item>
+          <Space style={{ width: '100%' }} size="large">
+            <Form.Item label="图标" name="icon" style={{ flex: 1 }}>
+              <Input placeholder="如 🏷️" />
+            </Form.Item>
+            <Form.Item label="排序" name="sort" style={{ flex: 1 }}>
+              <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+          <Form.Item label="启用" name="enabled" valuePropName="checked">
+            <Switch />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

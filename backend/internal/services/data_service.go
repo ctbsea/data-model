@@ -58,6 +58,7 @@ type SortField struct {
 
 type dataService struct {
 	modelRepo   repositories.ModelRepository
+	fieldRepo   repositories.FieldRepository
 	dynamicRepo repositories.DynamicRepository
 	modelCache  []*models.Model
 	engine      AutomationEngine
@@ -66,9 +67,22 @@ type dataService struct {
 func NewDataService(engine AutomationEngine) DataService {
 	return &dataService{
 		modelRepo:   repositories.NewModelRepository(),
+		fieldRepo:   repositories.NewFieldRepository(),
 		dynamicRepo: repositories.NewDynamicRepository(),
 		engine:      engine,
 	}
+}
+
+func (s *dataService) ensureModelFields(model *models.Model) error {
+	if model == nil || len(model.Fields) > 0 {
+		return nil
+	}
+	fields, err := s.fieldRepo.GetByModelID(model.ID)
+	if err != nil {
+		return err
+	}
+	model.Fields = fields
+	return nil
 }
 
 func (s *dataService) CreateData(modelName string, data map[string]interface{}) (string, error) {
@@ -77,9 +91,11 @@ func (s *dataService) CreateData(modelName string, data map[string]interface{}) 
 	if err != nil {
 		return "", errors.New("model not found")
 	}
+	if err := s.ensureModelFields(model); err != nil {
+		return "", err
+	}
 
-	// 创建数据时不验证required字段,只验证类型
-	if err := s.validateDataTypes(model, data); err != nil {
+	if err := s.validateData(model, data, "", true); err != nil {
 		return "", err
 	}
 
@@ -469,9 +485,12 @@ func (s *dataService) UpdateData(modelName, id string, data map[string]interface
 	if err != nil {
 		return errors.New("model not found")
 	}
+	if err := s.ensureModelFields(model); err != nil {
+		return err
+	}
 
 	// 验证数据
-	if err := s.validateData(model, data); err != nil {
+	if err := s.validateData(model, data, id, false); err != nil {
 		return err
 	}
 
@@ -525,10 +544,13 @@ func (s *dataService) BatchCreate(modelName string, dataList []map[string]interf
 	if err != nil {
 		return nil, errors.New("model not found")
 	}
+	if err := s.ensureModelFields(model); err != nil {
+		return nil, err
+	}
 
 	// 验证所有数据
 	for _, data := range dataList {
-		if err := s.validateData(model, data); err != nil {
+		if err := s.validateData(model, data, "", true); err != nil {
 			return nil, err
 		}
 	}
@@ -546,10 +568,13 @@ func (s *dataService) BatchUpdate(modelName string, updates []repositories.Batch
 	if err != nil {
 		return errors.New("model not found")
 	}
+	if err := s.ensureModelFields(model); err != nil {
+		return err
+	}
 
 	// 验证所有数据
 	for _, update := range updates {
-		if err := s.validateData(model, update.Data); err != nil {
+		if err := s.validateData(model, update.Data, update.ID, false); err != nil {
 			return err
 		}
 	}
@@ -592,13 +617,26 @@ func (s *dataService) BatchDelete(modelName string, ids []string) error {
 	return nil
 }
 
-func (s *dataService) validateData(model *models.Model, data map[string]interface{}) error {
-	// 不再验证必填字段,只验证字段类型
+func (s *dataService) validateData(model *models.Model, data map[string]interface{}, currentID string, requireAll bool) error {
 	for i := range model.Fields {
 		field := &model.Fields[i]
+		value, exists := data[field.Name]
 
-		// 验证字段类型
-		if value, exists := data[field.Name]; exists && value != nil {
+		if field.Required {
+			if (!exists && requireAll) || (exists && isEmptyFieldValue(value)) {
+				return fmt.Errorf("%s不能为空", field.DisplayName)
+			}
+		}
+
+		if exists && value != nil && !isEmptyFieldValue(value) {
+			if field.Type == "bool" || field.Type == "boolean" {
+				booleanValue, ok := normalizeBooleanValue(value)
+				if !ok {
+					return fmt.Errorf("field %s must be boolean", field.Name)
+				}
+				data[field.Name] = strconv.FormatBool(booleanValue)
+				value = booleanValue
+			}
 			if err := s.validateFieldType(field, value); err != nil {
 				return err
 			}
@@ -614,7 +652,6 @@ func (s *dataService) validateData(model *models.Model, data map[string]interfac
 					data[field.Name] = ids[0]
 				}
 			}
-			// 数字/货币类型:字符串转数字
 			if field.Type == "number" || field.Type == "currency" {
 				if str, ok := value.(string); ok {
 					if num, err := strconv.ParseFloat(str, 64); err == nil {
@@ -622,9 +659,106 @@ func (s *dataService) validateData(model *models.Model, data map[string]interfac
 					}
 				}
 			}
+			if field.Unique {
+				if err := s.validateUniqueValue(model.TableName, field, data[field.Name], currentID); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
+	return nil
+}
+
+func isEmptyFieldValue(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []string:
+		return len(v) == 0
+	case []interface{}:
+		return len(v) == 0
+	default:
+		return false
+	}
+}
+
+func normalizeBooleanValue(value interface{}) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "yes", "y", "是":
+			return true, true
+		case "false", "0", "no", "n", "否":
+			return false, true
+		default:
+			return false, false
+		}
+	case int:
+		return v != 0, true
+	case int8:
+		return v != 0, true
+	case int16:
+		return v != 0, true
+	case int32:
+		return v != 0, true
+	case int64:
+		return v != 0, true
+	case uint:
+		return v != 0, true
+	case uint8:
+		return v != 0, true
+	case uint16:
+		return v != 0, true
+	case uint32:
+		return v != 0, true
+	case uint64:
+		return v != 0, true
+	case float32:
+		return v != 0, true
+	case float64:
+		return v != 0, true
+	default:
+		return false, false
+	}
+}
+
+func (s *dataService) validateUniqueValue(tableName string, field *models.Field, value interface{}, currentID string) error {
+	if isEmptyFieldValue(value) {
+		return nil
+	}
+	quotedTable, err := utils.QuoteSQLIdentifier(tableName)
+	if err != nil {
+		return err
+	}
+	quotedField, err := utils.QuoteSQLIdentifier(field.Name)
+	if err != nil {
+		return err
+	}
+	quotedID, err := utils.QuoteSQLIdentifier("id")
+	if err != nil {
+		return err
+	}
+
+	sql := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s::text = ?", quotedTable, quotedField)
+	args := []interface{}{fmt.Sprintf("%v", value)}
+	if currentID != "" {
+		sql += fmt.Sprintf(" AND %s <> ?", quotedID)
+		args = append(args, currentID)
+	}
+
+	var count int64
+	if err := utils.DB.Raw(sql, args...).Scan(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("%s已存在，不能重复", field.DisplayName)
+	}
 	return nil
 }
 
@@ -663,7 +797,7 @@ func (s *dataService) validateFieldType(field *models.Field, value interface{}) 
 			return nil
 		}
 		return fmt.Errorf("field %s must be number", field.Name)
-	case "bool":
+	case "bool", "boolean":
 		if _, ok := value.(bool); !ok {
 			return fmt.Errorf("field %s must be boolean", field.Name)
 		}
@@ -692,6 +826,14 @@ func (s *dataService) validateDataTypes(model *models.Model, data map[string]int
 
 		// 验证字段类型
 		if value, exists := data[field.Name]; exists && value != nil {
+			if field.Type == "bool" || field.Type == "boolean" {
+				booleanValue, ok := normalizeBooleanValue(value)
+				if !ok {
+					return fmt.Errorf("field %s must be boolean", field.Name)
+				}
+				data[field.Name] = strconv.FormatBool(booleanValue)
+				value = booleanValue
+			}
 			if err := s.validateFieldType(field, value); err != nil {
 				return err
 			}

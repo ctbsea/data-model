@@ -29,16 +29,22 @@ type TriggerConfig struct {
 	Type       string             `json:"type"`
 	Logic      string             `json:"logic"` // "and" (default) | "or"
 	Conditions []TriggerCondition `json:"conditions"`
-	Schedule   *ScheduleConfig    `json:"schedule"`
+	// legacy single-condition fields used by the current UI
+	Field     string          `json:"field"`
+	Operator  string          `json:"operator"`
+	Value     interface{}     `json:"value"`
+	ValueUnit string          `json:"valueUnit"`
+	Schedule  *ScheduleConfig `json:"schedule"`
 	// legacy UI fields for scheduled trigger
 	ScheduleInterval string `json:"scheduleInterval"`
 	ScheduleValue    int    `json:"scheduleValue"`
 }
 
 type TriggerCondition struct {
-	Field    string      `json:"field"`
-	Operator string      `json:"operator"`
-	Value    interface{} `json:"value"`
+	Field     string      `json:"field"`
+	Operator  string      `json:"operator"`
+	Value     interface{} `json:"value"`
+	ValueUnit string      `json:"valueUnit"`
 }
 
 type ScheduleConfig struct {
@@ -204,7 +210,7 @@ func (e *automationEngine) processEvent(eventType, modelName, recordID string, r
 				if eventType != "record_create" && eventType != "record_update" {
 					continue
 				}
-				if !matchConditions(trigger.Logic, trigger.Conditions, recordData) {
+				if !matchConditions(trigger.Logic, triggerConditions(trigger), recordData) {
 					continue
 				}
 				matched = true
@@ -611,8 +617,9 @@ func (e *automationEngine) registerScheduledAutomation(automation models.Automat
 			continue
 		}
 		a := automation
+		currentTrigger := trigger
 		entryID, err := e.cron.AddFunc(spec, func() {
-			go e.executeAutomationWithRetry(a, map[string]interface{}{"trigger": "scheduled"}, 0)
+			go e.processScheduledAutomation(a, currentTrigger)
 		})
 		if err != nil {
 			continue
@@ -621,6 +628,46 @@ func (e *automationEngine) registerScheduledAutomation(automation models.Automat
 		e.cronIDs[automation.ID] = entryID
 		e.mu.Unlock()
 		break // one scheduled trigger per automation
+	}
+}
+
+func (e *automationEngine) processScheduledAutomation(automation models.Automation, trigger TriggerConfig) {
+	var model models.Model
+	if err := e.db.First(&model, "id = ?", automation.ModelID).Error; err != nil {
+		return
+	}
+	if model.TableName == "" {
+		return
+	}
+	quotedTable, err := utils.QuoteSQLIdentifier(model.TableName)
+	if err != nil {
+		return
+	}
+
+	conditions := triggerConditions(trigger)
+	pageSize := 200
+	for offset := 0; ; offset += pageSize {
+		var records []map[string]interface{}
+		sql := fmt.Sprintf("SELECT * FROM %s ORDER BY %s LIMIT ? OFFSET ?", quotedTable, mustQuoteAutomationIdentifier("id"))
+		if err := e.db.Raw(sql, pageSize, offset).Scan(&records).Error; err != nil {
+			return
+		}
+		if len(records) == 0 {
+			return
+		}
+		for _, record := range records {
+			if !matchConditions(trigger.Logic, conditions, record) {
+				continue
+			}
+			record["trigger"] = "scheduled"
+			record["scheduled_at"] = time.Now().Format(time.RFC3339)
+			if _, ok := record["id"]; ok {
+				go e.executeAutomationWithRetry(automation, record, 0)
+			}
+		}
+		if len(records) < pageSize {
+			return
+		}
 	}
 }
 
@@ -644,6 +691,21 @@ func parseTriggers(raw string) []TriggerConfig {
 	return nil
 }
 
+func triggerConditions(trigger TriggerConfig) []TriggerCondition {
+	if len(trigger.Conditions) > 0 {
+		return trigger.Conditions
+	}
+	if trigger.Field == "" || trigger.Operator == "" {
+		return nil
+	}
+	return []TriggerCondition{{
+		Field:     trigger.Field,
+		Operator:  trigger.Operator,
+		Value:     trigger.Value,
+		ValueUnit: trigger.ValueUnit,
+	}}
+}
+
 func matchConditions(logic string, conditions []TriggerCondition, data map[string]interface{}) bool {
 	if len(conditions) == 0 {
 		return true
@@ -651,7 +713,7 @@ func matchConditions(logic string, conditions []TriggerCondition, data map[strin
 	isOr := strings.ToLower(logic) == "or"
 	for _, cond := range conditions {
 		val := data[cond.Field]
-		result := evalCondition(normalizeOperator(cond.Operator), val, cond.Value)
+		result := evalConditionWithUnit(normalizeOperator(cond.Operator), val, cond.Value, cond.ValueUnit)
 		if isOr && result {
 			return true
 		}
@@ -660,6 +722,14 @@ func matchConditions(logic string, conditions []TriggerCondition, data map[strin
 		}
 	}
 	return !isOr
+}
+
+func mustQuoteAutomationIdentifier(identifier string) string {
+	quoted, err := utils.QuoteSQLIdentifier(identifier)
+	if err != nil {
+		panic(err)
+	}
+	return quoted
 }
 
 // normalizeOperator maps frontend operator names to internal ones
@@ -683,8 +753,19 @@ func normalizeOperator(op string) string {
 		return "is_empty"
 	case "is_not_empty":
 		return "is_not_empty"
+	case "before_relative":
+		return "before_relative"
+	case "after_relative":
+		return "after_relative"
 	}
 	return op
+}
+
+func evalConditionWithUnit(operator string, actual, expected interface{}, unit string) bool {
+	if operator == "before_relative" || operator == "after_relative" {
+		return evalRelativeTimeCondition(operator, actual, expected, unit)
+	}
+	return evalCondition(operator, actual, expected)
 }
 
 func evalCondition(operator string, actual, expected interface{}) bool {
@@ -722,6 +803,51 @@ func evalCondition(operator string, actual, expected interface{}) bool {
 		}
 	}
 	return false
+}
+
+func evalRelativeTimeCondition(operator string, actual, expected interface{}, unit string) bool {
+	actualTime, ok := toTime(actual)
+	if !ok {
+		return false
+	}
+	amount, err := toFloat(expected)
+	if err != nil || amount <= 0 {
+		return false
+	}
+	threshold := time.Now().Add(-relativeDuration(amount, unit))
+	if operator == "before_relative" {
+		return actualTime.Before(threshold)
+	}
+	return actualTime.After(threshold)
+}
+
+func relativeDuration(amount float64, unit string) time.Duration {
+	switch strings.ToLower(unit) {
+	case "hours", "hour":
+		return time.Duration(amount * float64(time.Hour))
+	case "days", "day":
+		return time.Duration(amount * 24 * float64(time.Hour))
+	default:
+		return time.Duration(amount * float64(time.Minute))
+	}
+}
+
+func toTime(v interface{}) (time.Time, bool) {
+	switch value := v.(type) {
+	case time.Time:
+		return value, true
+	case string:
+		if value == "" {
+			return time.Time{}, false
+		}
+		layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02"}
+		for _, layout := range layouts {
+			if parsed, err := time.Parse(layout, value); err == nil {
+				return parsed, true
+			}
+		}
+	}
+	return time.Time{}, false
 }
 
 func toFloat(v interface{}) (float64, error) {

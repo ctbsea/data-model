@@ -127,7 +127,7 @@ func MapFieldTypeToSQL(fieldType string) string {
 		return "VARCHAR(32)"
 	case "date":
 		return "TIMESTAMP"
-	case "bool":
+	case "bool", "boolean":
 		return "BOOLEAN"
 	case "enum":
 		return "VARCHAR(64)"

@@ -1,8 +1,9 @@
 ﻿import React, { useEffect, useState } from 'react'
-import { Form, Input, Select, message, Modal, Button, Popover } from 'antd'
+import { Form, Input, Select, message, Modal, Button, Popover, Switch, Space } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { modelApi, Field, Model } from '../../../api/model'
 import { dictionaryApi, DictionaryItem } from '../../../api/dictionary'
+import { buildDictionaryTypes, parseFieldOptions } from '../../../utils/dictionaryField'
 
 const { Option } = Select
 
@@ -144,23 +145,30 @@ export const FieldModal: React.FC<FieldModalProps> = ({
   const [form] = Form.useForm()
   const isEdit = !!field
   const [currencies, setCurrencies] = useState<DictionaryItem[]>([])
+  const [dictionaryItems, setDictionaryItems] = useState<DictionaryItem[]>([])
   const [models, setModels] = useState<Model[]>([])
 
   useEffect(() => {
     if (visible) {
       dictionaryApi.list('currency').then(res => setCurrencies(res.items || [])).catch(console.error)
+      dictionaryApi.list(undefined, true).then(res => setDictionaryItems(res.items || [])).catch(console.error)
       modelApi.list(1, 1000).then(res => setModels(res.models || [])).catch(console.error)
       if (field) {
         // 编辑模式: 填充现有数据
         let currency = 'CNY'
         let options = ''
+        let dictionaryType = ''
         let relationConfig: any = {}
         try {
           if (field.type === 'currency') {
             currency = JSON.parse(field.options || '{}').currency || 'CNY'
           } else if (field.options) {
-            const parsed = JSON.parse(field.options)
-            options = Array.isArray(parsed) ? parsed.join('\n') : field.options
+            const parsed = parseFieldOptions(field.options)
+            if (!Array.isArray(parsed) && parsed?.source === 'dictionary') {
+              dictionaryType = parsed.dictionary_type || ''
+            } else {
+              options = Array.isArray(parsed) && parsed.every(item => typeof item === 'string') ? parsed.join('\n') : field.options
+            }
           }
           relationConfig = field.relation_config ? JSON.parse(field.relation_config) : {}
         } catch {
@@ -169,7 +177,10 @@ export const FieldModal: React.FC<FieldModalProps> = ({
         form.setFieldsValue({
           display_name: field.display_name,
           type: field.type,
+          required: field.required,
+          unique: field.unique,
           options,
+          dictionary_type: dictionaryType,
           currency,
           relation_target_model: relationConfig.target_model_id,
           relation_type: relationConfig.relation_type || (relationConfig.allow_multiple ? 'one_to_many' : 'one_to_one'),
@@ -190,6 +201,8 @@ export const FieldModal: React.FC<FieldModalProps> = ({
       let optionsStr = '[]'
       if (values.type === 'currency') {
         optionsStr = JSON.stringify({ currency: values.currency || 'CNY' })
+      } else if ((values.type === 'select' || values.type === 'multi_select') && values.dictionary_type) {
+        optionsStr = JSON.stringify({ source: 'dictionary', dictionary_type: values.dictionary_type })
       } else if (values.options) {
         try {
           JSON.parse(values.options)
@@ -220,8 +233,8 @@ export const FieldModal: React.FC<FieldModalProps> = ({
           name: field!.name,
           display_name: values.display_name,
           type: values.type,
-          required: field!.required,
-          unique: field!.unique,
+          required: !!values.required,
+          unique: !!values.unique,
           options: optionsStr,
           validation: field!.validation,
           relation_config: relationConfigStr || field!.relation_config,
@@ -233,8 +246,8 @@ export const FieldModal: React.FC<FieldModalProps> = ({
           name: values.name || `field_${Date.now()}`,
           display_name: values.display_name,
           type: values.type,
-          required: false,
-          unique: false,
+          required: !!values.required,
+          unique: !!values.unique,
           order: fields.length,
           validation: '{}',
           options: optionsStr,
@@ -284,25 +297,38 @@ export const FieldModal: React.FC<FieldModalProps> = ({
           initialValue="text"
         >
           <Select placeholder="选择字段类型">
-            <Option value="text">文本</Option>
-            <Option value="textarea">多行文本</Option>
-            <Option value="number">数字</Option>
-            <Option value="currency">货币金额</Option>
-            <Option value="select">单选</Option>
-            <Option value="multi_select">多选</Option>
-            <Option value="boolean">布尔值</Option>
-            <Option value="date">日期</Option>
-            <Option value="datetime">日期时间</Option>
-            <Option value="email">邮箱</Option>
-            <Option value="phone">电话</Option>
-            <Option value="url">链接</Option>
-            <Option value="file">文件</Option>
-            <Option value="image">图片</Option>
-            <Option value="country">国家</Option>
-            <Option value="relation">关联字段</Option>
-            <Option value="user">用户</Option>
+            <Select.OptGroup label="基础字段">
+              <Option value="text">文本</Option>
+              <Option value="textarea">多行文本</Option>
+              <Option value="number">数字</Option>
+              <Option value="currency">货币金额</Option>
+              <Option value="boolean">布尔值</Option>
+              <Option value="date">日期</Option>
+              <Option value="datetime">日期时间</Option>
+              <Option value="email">邮箱</Option>
+              <Option value="phone">电话</Option>
+              <Option value="url">链接</Option>
+              <Option value="file">文件</Option>
+              <Option value="image">图片</Option>
+              <Option value="relation">关联字段</Option>
+              <Option value="user">用户</Option>
+            </Select.OptGroup>
+            <Select.OptGroup label="选项字段">
+              <Option value="select">单选</Option>
+              <Option value="multi_select">多选</Option>
+              <Option value="country">国家</Option>
+            </Select.OptGroup>
           </Select>
         </Form.Item>
+
+        <Space size="large" style={{ marginBottom: 16 }}>
+          <Form.Item label="是否必填" name="required" valuePropName="checked" initialValue={false} style={{ marginBottom: 0 }}>
+            <Switch checkedChildren="必填" unCheckedChildren="选填" />
+          </Form.Item>
+          <Form.Item label="是否唯一" name="unique" valuePropName="checked" initialValue={false} style={{ marginBottom: 0 }} tooltip="开启后，添加和编辑记录时不允许该字段值重复。">
+            <Switch checkedChildren="唯一" unCheckedChildren="可重复" />
+          </Form.Item>
+        </Space>
 
         <Form.Item shouldUpdate>
           {({ getFieldValue }) => {
@@ -310,12 +336,18 @@ export const FieldModal: React.FC<FieldModalProps> = ({
             
             if (type === 'select' || type === 'multi_select') {
               return (
-                <Form.Item
-                  label="选项配置"
-                  name="options"
-                >
-                  <OptionEditor />
-                </Form.Item>
+                <>
+                  <Form.Item label="字典类型" name="dictionary_type" tooltip="选择后，该字段选项会跟随字典维护页面中的子项变化。">
+                    <Select allowClear showSearch placeholder="选择字典类型，也可以不选并手动维护选项" options={buildDictionaryTypes(dictionaryItems)} />
+                  </Form.Item>
+                  <Form.Item shouldUpdate noStyle>
+                    {({ getFieldValue }) => !getFieldValue('dictionary_type') ? (
+                      <Form.Item label="选项配置" name="options">
+                        <OptionEditor />
+                      </Form.Item>
+                    ) : null}
+                  </Form.Item>
+                </>
               )
             }
 

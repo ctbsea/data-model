@@ -1,5 +1,5 @@
 import React from 'react'
-import { Modal, Form, Input, InputNumber, Select, DatePicker } from 'antd'
+import { Modal, Form, Input, InputNumber, Select, DatePicker, Radio } from 'antd'
 import dayjs from 'dayjs'
 import { Field, Model } from '../../api/model'
 
@@ -56,10 +56,10 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
     }
     if (field.type === 'boolean') {
       return (
-        <Select>
-          <Option value={true}>是</Option>
-          <Option value={false}>否</Option>
-        </Select>
+        <Radio.Group optionType="button" buttonStyle="solid" style={{ width: '100%' }}>
+          <Radio.Button value={true} style={{ width: '50%', textAlign: 'center' }}>{'是'}</Radio.Button>
+          <Radio.Button value={false} style={{ width: '50%', textAlign: 'center' }}>{'否'}</Radio.Button>
+        </Radio.Group>
       )
     }
     if (field.type === 'user') {

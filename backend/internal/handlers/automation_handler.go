@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/dmdp/platform/internal/models"
@@ -210,21 +211,37 @@ func (h *AutomationHandler) RegenerateWebhookToken(c *gin.Context) {
 // ListRuns 获取自动化运行记录
 func (h *AutomationHandler) ListRuns(c *gin.Context) {
 	id := c.Param("id")
-	limit := 50
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
 	status := c.Query("status") // optional filter: success | failed | running
 
-	query := utils.DB.Where("automation_id = ?", id).Order("started_at DESC").Limit(limit)
+	query := utils.DB.Model(&models.AutomationRun{}).Where("automation_id = ?", id)
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
 
-	var runs []models.AutomationRun
-	if err := query.Find(&runs).Error; err != nil {
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"runs": runs})
+	var runs []models.AutomationRun
+	if err := query.Order("started_at DESC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&runs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"runs": runs, "total": total, "page": page, "page_size": pageSize})
 }
 
 // GetStats 获取自动化统计数据

@@ -39,6 +39,29 @@ const AGG_OPTIONS = [
   { label: '去重计数', value: 'distinct' },
 ]
 
+const FIELD_NAME_PATTERN = /^field_\d+$/
+
+const getFieldLabel = (fields: Field[], fieldName?: string) => {
+  if (!fieldName) return ''
+  const field = fields.find(item => item.name === fieldName || item.id === fieldName)
+  return field?.display_name || fieldName
+}
+
+const getMetricLabel = (metric: MetricItem, fields: Field[]) => {
+  if (!metric.alias || metric.alias === metric.field || FIELD_NAME_PATTERN.test(metric.alias)) {
+    const fieldLabel = getFieldLabel(fields, metric.field)
+    return fieldLabel || metric.alias || '数值'
+  }
+  return metric.alias
+}
+
+const normalizeMetricLabels = (metrics: MetricItem[], fields: Field[]) => (
+  metrics.map(metric => ({
+    ...metric,
+    alias: getMetricLabel(metric, fields),
+  }))
+)
+
 const TIME_PRESETS = [
   { label: '最近7天', value: '7d' },
   { label: '最近30天', value: '30d' },
@@ -108,7 +131,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   widget, models, onUpdate, onDelete, onConfigDrawerChange, globalFilters,
 }) => {
   const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<AggregateResult[]>([])
+  const [data, setData] = useState<AggregateResult[] | null>(null)
   const [configDrawerVisible, setConfigDrawerVisible] = useState(false)
   const [form] = Form.useForm()
   const [modelFields, setModelFields] = useState<Field[]>([])
@@ -127,7 +150,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
       const apiMetrics: MetricOption[] = metrics.map(m => ({
         func: m.aggregation,
         field: m.aggregation !== 'count' ? m.field : undefined,
-        alias: m.alias,
+        alias: getMetricLabel(m, modelFields),
       }))
 
       const timeFilter = buildTimeRangeFilter(config.timeRange)
@@ -136,7 +159,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
 
       const isTimeLine = config.chartType === 'line' && !!config.timeField && !!config.granularity
 
-      let result: AggregateResult[]
+      let result: AggregateResult[] | null
       if (isTimeLine) {
         result = await dataApi.aggregate(config.modelName, {
           time_field: config.timeField,
@@ -144,7 +167,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           metrics: apiMetrics,
           filter: Object.keys(mergedFilter).length > 0 ? mergedFilter : undefined,
         })
-        result = result.map(item => ({
+        result = (result ?? []).map(item => ({
           ...item,
           name: formatTimeBucket(item.name, config.granularity),
         }))
@@ -159,10 +182,10 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           metrics: apiMetrics,
           filter: Object.keys(mergedFilter).length > 0 ? mergedFilter : undefined,
         })
-        result = result.map(item => ({ ...item, name: widget.title || '统计' }))
+        result = (result ?? []).map(item => ({ ...item, name: widget.title || '统计' }))
       }
 
-      setData(result)
+      setData(result ?? [])
     } catch (error) {
       console.error('Failed to load chart data:', error)
     } finally {
@@ -171,7 +194,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   }, [
     config.modelName, config.dimensionField, config.chartType,
     config.valueAggregation, config.timeField, config.granularity,
-    config.metrics, config.timeRange, globalFilters,
+    config.metrics, config.timeRange, globalFilters, modelFields,
   ])
 
   useEffect(() => {
@@ -181,7 +204,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   useEffect(() => {
     if (config.modelId) {
       const model = models.find(m => m.id === config.modelId)
-      if (model) setModelFields(model.fields || [])
+      if (model) setModelFields(model.fields ?? [])
     }
   }, [config.modelId, models])
 
@@ -212,6 +235,8 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
         }
       }
 
+      const nextMetrics = normalizeMetricLabels(values.metrics || [], model?.fields || modelFields)
+
       onUpdate({
         ...widget,
         title: values.title,
@@ -223,7 +248,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           dimensionField: values.dimensionField || '',
           valueField: '',
           valueAggregation: 'count',
-          metrics: values.metrics || [],
+          metrics: nextMetrics,
           stacked: values.stacked || false,
           timeField: values.timeField,
           granularity: values.granularity,
@@ -237,11 +262,11 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
     }
   }
 
-  const activeMetrics = resolveMetrics(config)
+  const activeMetrics = normalizeMetricLabels(resolveMetrics(config), modelFields)
 
   const renderChart = () => {
     if (loading) return <Spin style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }} />
-    if (!data.length) return <Empty description="暂无数据" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }} />
+    if (!data || !data.length) return <Empty description="暂无数据" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }} />
 
     if (config.chartType === 'pie' || config.chartType === 'donut') {
       const firstMetric = activeMetrics[0]
@@ -366,7 +391,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
       modelId: config.modelId,
       chartType: config.chartType || 'bar',
       dimensionField: config.dimensionField,
-      metrics,
+      metrics: normalizeMetricLabels(metrics, modelFields),
       stacked: config.stacked || false,
       timeField: config.timeField,
       granularity: config.granularity,

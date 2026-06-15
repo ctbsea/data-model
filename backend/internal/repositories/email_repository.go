@@ -43,10 +43,10 @@ func (r *emailRepository) ListInbox(userID string, page, pageSize int, filterEma
 		return nil, 0, err
 	}
 
-	db := utils.DB.Model(&models.Email{}).Where("`to` = ?", user.EmailAddress)
+	db := utils.DB.Model(&models.Email{}).Where("\"to\" = ?", user.EmailAddress)
 	// 如果有过滤邮箱，过滤发件人
 	if filterEmail != "" {
-		db = db.Where("`from` = ?", filterEmail)
+		db = db.Where("\"from\" = ?", filterEmail)
 	}
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -70,10 +70,10 @@ func (r *emailRepository) ListSent(userID string, page, pageSize int, filterEmai
 		return nil, 0, err
 	}
 
-	db := utils.DB.Model(&models.Email{}).Where("`from` = ?", user.EmailAddress)
+	db := utils.DB.Model(&models.Email{}).Where("\"from\" = ?", user.EmailAddress)
 	// 如果有过滤邮箱，过滤收件人
 	if filterEmail != "" {
-		db = db.Where("`to` = ?", filterEmail)
+		db = db.Where("\"to\" = ?", filterEmail)
 	}
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
